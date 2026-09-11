@@ -1,0 +1,53 @@
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local toolchains and build products
+.tools/
+/bin/
+*.test
+*.out
+/coverage/
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/web/playwright-report/
+/web/test-results/
+*.tsbuildinfo
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Terraform runtime data; source .tf files remain tracked
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Explicit, reviewed fixture inputs may be committed
+!examples/**/*.tfvars
+!examples/**/*.tfvars.json
+!**/testdata/**/*.tfvars
+!**/testdata/**/*.tfvars.json
+
+# Demo session data
+.terradock/
+*.log
