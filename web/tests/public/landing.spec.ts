@@ -46,7 +46,7 @@ test("serves only public assets without APIs, remote dependencies or browser err
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "El código es tuyo.",
   );
-  await page.getByRole("link", { name: "Ver ejemplo", exact: true }).click();
+  await page.locator("#ejemplo").scrollIntoViewIfNeeded();
   await expect(page.locator("#ejemplo")).toBeInViewport();
   expect(requests.every((url) => url.startsWith(`${baseURL}/`))).toBe(true);
   expect(requests.some((url) => new URL(url).pathname.startsWith("/api"))).toBe(
@@ -110,6 +110,10 @@ test("explains availability and gives every link a real destination", async ({
       const response = await request.get(new URL(href!, page.url()).href);
       expect(response.ok()).toBe(true);
       expect(await response.text()).toContain("SIL OPEN FONT LICENSE");
+    } else if (href === "./demo/") {
+      const response = await request.get(new URL(href, page.url()).href);
+      expect(response.ok()).toBe(true);
+      expect(await response.text()).toContain("Demo interactiva");
     } else {
       expect(href).toMatch(
         /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#|\/blob\/main\/docs\/limitations\.md$)/,
@@ -129,7 +133,7 @@ test("explains availability and gives every link a real destination", async ({
   }
 });
 
-test("keyboard navigation reaches the content, links and static example", async ({
+test("keyboard navigation reaches the content and opens the interactive demo", async ({
   page,
 }) => {
   await page.goto("/");
@@ -141,23 +145,18 @@ test("keyboard navigation reaches the content, links and static example", async 
   await expect(page.getByRole("main")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("link", { name: "Ver ejemplo", exact: true }),
+    page.getByRole("link", { name: "Probar demo", exact: true }),
   ).toBeFocused();
   expect(
     await page
-      .getByRole("link", { name: "Ver ejemplo", exact: true })
+      .getByRole("link", { name: "Probar demo", exact: true })
       .evaluate((element) => getComputedStyle(element).outlineStyle),
   ).toBe("solid");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#ejemplo")).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByRole("region", { name: /^Muestra del editor/ }),
-  ).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByRole("link", { name: "Consultar alcance y límites" }),
-  ).toBeFocused();
+  await expect(page).toHaveURL(/\/demo\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Del código a la arquitectura.",
+  );
 });
 
 for (const width of [320, 390, 601, 768, 1024, 1440]) {

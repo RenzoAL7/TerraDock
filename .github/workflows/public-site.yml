@@ -5,6 +5,12 @@ on:
     branches: [main, codex/landing-publica]
     paths:
       - web/**
+      - cmd/terradock-demo/**
+      - internal/publicdemo/**
+      - internal/terraform/**
+      - go.mod
+      - go.sum
+      - scripts/build-public-demo.mjs
       - Dockerfile.public
       - Dockerfile.public.dockerignore
       - docker/public-nginx.conf
@@ -28,6 +34,10 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache-dependency-path: go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -39,6 +49,7 @@ jobs:
           npm ci
           npm run format:check
           npm run lint
+          go test ../internal/publicdemo ../internal/terraform
           npx playwright install --with-deps chromium
           npm run test:public
       - uses: docker/setup-buildx-action@v3

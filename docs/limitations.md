@@ -2,7 +2,13 @@
 
 Esta entrega permite demostrar el flujo de un IDE local y sirve de base para desarrollar TerraDock. No completa el contrato de v1.0 del [roadmap](roadmap.md). Una presentación cuidada y pruebas automatizadas no sustituyen la verificación pendiente sobre proyectos, sistemas y escenarios de recuperación reales.
 
-## Alcance de la demo
+## Demo pública en el navegador
+
+La entrada `/demo/` permite editar un único `main.tf` en memoria, seleccionar recursos, modificar literales compatibles, navegar al código y descargar el resultado. Reutiliza el parser y el editor locales compilados a WebAssembly. No abre carpetas ni llama al servidor Go; los cambios se pierden al recargar. Tiene límites de 64 KiB, 1000 líneas y 60 declaraciones. Si el HCL es inválido, muestra diagnósticos y conserva la última vista válida identificada como tal, con el inspector deshabilitado.
+
+La [guía de la demo pública](browser-demo.md) describe las acciones y la compilación. Las limitaciones de interpretación y ejecución de este documento también se aplican a esa entrada. Los límites de archivos, guardado y carpetas que siguen corresponden únicamente a la aplicación local.
+
+## Alcance de la aplicación local
 
 | Área | Alcance |
 | --- | --- |

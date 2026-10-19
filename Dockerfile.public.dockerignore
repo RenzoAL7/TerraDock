@@ -1,6 +1,21 @@
 **
 !LICENSE
 !Dockerfile.public
+!go.mod
+!go.sum
+!internal/
+internal/*
+!internal/terraform/
+!internal/terraform/**
+!internal/publicdemo/
+!internal/publicdemo/**
+!cmd/
+cmd/*
+!cmd/terradock-demo/
+!cmd/terradock-demo/**
+!scripts/
+scripts/*
+!scripts/build-public-demo.mjs
 !docker/
 docker/*
 !docker/public-nginx.conf
@@ -16,3 +31,4 @@ web/*
 !web/tests/**
 !web/public-site/
 !web/public-site/**
+web/src/demo/generated/

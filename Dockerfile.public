@@ -1,4 +1,15 @@
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS go-toolchain
+
 FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal/terraform ./internal/terraform
+COPY internal/publicdemo ./internal/publicdemo
+COPY cmd/terradock-demo ./cmd/terradock-demo
+COPY scripts/build-public-demo.mjs ./scripts/build-public-demo.mjs
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci

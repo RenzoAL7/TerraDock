@@ -10,7 +10,9 @@ Esta entrega es una **demo funcional en desarrollo**. Su alcance y sus límites 
 
 ## Página pública de presentación
 
-La portada tiene una entrada React independiente y muestra un ejemplo estático del producto. Distingue las capacidades de la demo local de las funciones web previstas; no abre proyectos, solicita credenciales ni llama a la API Go.
+La [portada pública](http://193.122.221.201/) tiene una entrada React independiente y enlaza una [demo interactiva en el navegador](http://193.122.221.201/demo/). Puedes editar el HCL, seleccionar recursos, cambiar propiedades literales y descargar tu ejemplo. El análisis funciona en memoria; no necesita una cuenta ni llama a la API Go o a proveedores cloud. El acceso y las integraciones pendientes siguen identificados como futuros.
+
+Para construir ambas páginas necesitas Go 1.25 o superior, Node.js 24 y npm:
 
 ```sh
 npm --prefix web ci          # Solo si faltan las dependencias
@@ -18,7 +20,7 @@ make public-build           # Salida: web/dist-public/
 make public-preview         # http://127.0.0.1:4174
 ```
 
-Sirve **solo `web/dist-public/`** para la portada. La aplicación local conserva su entrada y su salida `web/dist/`. Consulta los [comandos, alcance y validación de la portada](docs/public-landing.md). Esta entrega prepara el build local; la publicación con dominio corresponde a una tarea posterior.
+Sirve **solo `web/dist-public/`**, que contiene la portada y `/demo/`. El resultado es estático y no requiere un servidor Go. La aplicación local conserva su entrada y su salida `web/dist/`. Consulta la [guía de la demo pública](docs/browser-demo.md), los [comandos de la portada](docs/public-landing.md) y el [despliegue en GHCR/K3s](docs/public-deployment.md). El acceso por IP usa HTTP hasta configurar dominio y TLS.
 
 ## Probar la demo
 

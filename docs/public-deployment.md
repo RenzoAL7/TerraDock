@@ -1,18 +1,20 @@
 # Publicación estática en GHCR y K3s
 
-La portada se publica en **http://193.122.221.201/** mediante el balanceador existente de OCI y Traefik. Este acceso inicial usa HTTP: todavía no hay dominio ni certificado propio de TerraDock. La ruta de `gpath.tech` y el chequeo `/healthz` del balanceador conservan sus recursos existentes.
+La portada se publica en **http://193.122.221.201/** y la demo interactiva en **http://193.122.221.201/demo/** mediante el balanceador existente de OCI y Traefik. Este acceso inicial usa HTTP: todavía no hay dominio ni certificado propio de TerraDock. La ruta de `gpath.tech` y el chequeo `/healthz` del balanceador conservan sus recursos existentes.
 
 ## Artefacto público
 
 - Código: rama `codex/landing-publica` de `RenzoAL7/TerraDock`.
 - Imagen: `ghcr.io/renzoal7/terradock-public:sha-<commit-completo>`.
 - Plataformas: `linux/arm64` (VM OCI actual) y `linux/amd64`.
-- Construcción: `Dockerfile.public`, bases fijadas por digest y `npm ci` con el lockfile existente.
-- Contenido servido: exclusivamente `web/dist-public/`, más `release.json` con la revisión de origen. El runtime no contiene Go, el editor local, `node_modules`, credenciales ni archivos del checkout.
+- Construcción: `Dockerfile.public`, bases fijadas por digest, Go para compilar el analizador WebAssembly y `npm ci` con el lockfile existente.
+- Contenido servido: exclusivamente `web/dist-public/`, más `release.json` con la revisión de origen. Incluye el analizador WebAssembly y sus licencias; no contiene el servidor o compilador Go, el editor local, `node_modules`, credenciales ni archivos del checkout.
 - Runtime: Nginx sin privilegios, UID 101, puerto 8080, raíz de solo lectura y `/tmp` temporal.
 - `.github/workflows/public-site.yml` valida la portada y el contenedor antes de publicar con `GITHUB_TOKEN`, limitado a `contents: read` y `packages: write`. No necesita un PAT persistente en OCI.
 
-El contexto Docker usa una lista de archivos permitidos en `Dockerfile.public.dockerignore`. No se incorporan `.git`, herramientas locales, dependencias instaladas, resultados ni configuraciones privadas. La CSP permite recursos locales y bloquea conexiones desde JavaScript. Las rutas desconocidas y `/api` responden 404; no hay proxy al servidor local.
+El contexto Docker usa una lista de archivos permitidos en `Dockerfile.public.dockerignore`. No se incorporan `.git`, herramientas locales, dependencias instaladas, resultados ni configuraciones privadas. La CSP de los documentos permite recursos locales y bloquea conexiones desde JavaScript. Solo el worker del analizador recibe una política que admite WebAssembly y la descarga de su binario desde el mismo origen. Las rutas desconocidas y `/api` responden 404; no hay proxy al servidor local.
+
+El binario se carga al abrir `/demo/`, no en la portada. En el build verificado ocupa aproximadamente 8,5 MB sin comprimir y 2,3 MB transferidos con gzip. Nginx comprime `application/wasm`; los assets con hash usan caché inmutable. La [guía de la demo](browser-demo.md) detalla sus límites y su funcionamiento en memoria.
 
 ## Comprobar la imagen localmente
 
@@ -28,7 +30,7 @@ PUBLIC_BASE_URL=http://127.0.0.1:8088 npm --prefix web run test:public
 docker rm -f terradock-public-check
 ```
 
-La suite contra un servidor existente ejecuta nueve pruebas y omite solo la de la entrada de desarrollo. Comprueba escritorio/móvil, teclado, enlaces, recursos locales y ausencia de errores de consola, cookies, almacenamiento o llamadas a APIs. `scripts/smoke-public.mjs` comprueba cabeceras, archivos, 404 y la revisión publicada. No prueba el `/healthz` público porque pertenece al balanceador existente.
+La suite contra un servidor existente ejecuta 18 pruebas y omite solo la de la entrada de desarrollo. Comprueba escritorio/móvil, teclado, enlaces, recursos locales, edición y exportación reales, errores HCL y recuperación del analizador, además de ausencia de errores de consola, cookies, almacenamiento o llamadas a APIs. `scripts/smoke-public.mjs` comprueba ambas páginas, cabeceras, archivos, 404 y la revisión publicada. No prueba el `/healthz` público porque pertenece al balanceador existente.
 
 ## Manifiestos y publicación
 
