@@ -1,5 +1,7 @@
 # Publicación inicial — 18 de octubre de 2026
 
+La actualización del 19 de octubre incorpora la [demo interactiva publicada](interactive-demo.md). Este documento conserva la evidencia de la primera publicación.
+
 **URL comprobada: http://193.122.221.201/**. La portada usa HTTP hasta configurar el dominio y TLS de TerraDock.
 
 ## Versiones

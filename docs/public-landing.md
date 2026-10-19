@@ -60,4 +60,4 @@ git diff --check
 
 La suite pública comprueba ausencia de llamadas `/api`, recursos externos, errores de navegador, cookies o almacenamiento local; disponibilidad de fuentes y assets; 404 en rutas privadas; destinos de enlaces; estado futuro del acceso; navegación por teclado; ausencia de desbordamiento de página y disposición izquierda/derecha en 320, 390, 601, 768, 1024 y 1440 px. La demo añade edición de código/propiedades, actualización de relaciones, errores HCL, exportación, reinicio y recuperación tras un fallo de carga. Produce capturas en `web/test-results/public/` y un informe en `web/playwright-report/public/`, ambos ignorados por Git.
 
-Resultados y capturas revisadas: [validación de esta entrega](public-landing-validation.md).
+Resultados y capturas revisadas: [validación inicial de la portada](public-landing-validation.md) y [publicación de la demo interactiva](deployment/interactive-demo.md).

@@ -1,0 +1,88 @@
+{
+  "url": "http://193.122.221.201/demo/",
+  "sourceRevision": "48e41be8efc43f74964fc0dea054a26cdc7c9dfe",
+  "manifestRevision": "59031823ff6df69f13864b1d12d24ff0fd7354e1",
+  "image": "ghcr.io/renzoal7/terradock-public@sha256:060f925ed2a5a32161f14deb0ade09ba8c76f21a0117321b00b515fd8610b1a4",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "checkedAt": "2026-10-19T19:43:23.242Z",
+  "applications": [
+    {
+      "name": "terradock-public",
+      "sync": "Synced",
+      "health": "Healthy",
+      "revision": "59031823ff6df69f13864b1d12d24ff0fd7354e1"
+    },
+    {
+      "name": "gpath-prod",
+      "sync": "Synced",
+      "health": "Healthy",
+      "revision": "3363fe7cc28ae370d3799a7073159194d1d1262a"
+    }
+  ],
+  "deployment": {
+    "desired": 2,
+    "available": 2,
+    "updated": 2
+  },
+  "pods": [
+    {
+      "name": "terradock-public-9bc8d9cd7-2phzn",
+      "phase": "Running",
+      "containers": [
+        {
+          "ready": true,
+          "restarts": 0,
+          "image": "ghcr.io/renzoal7/terradock-public@sha256:060f925ed2a5a32161f14deb0ade09ba8c76f21a0117321b00b515fd8610b1a4"
+        }
+      ]
+    },
+    {
+      "name": "terradock-public-9bc8d9cd7-qhr7p",
+      "phase": "Running",
+      "containers": [
+        {
+          "ready": true,
+          "restarts": 0,
+          "image": "ghcr.io/renzoal7/terradock-public@sha256:060f925ed2a5a32161f14deb0ade09ba8c76f21a0117321b00b515fd8610b1a4"
+        }
+      ]
+    }
+  ],
+  "gpathSpecificationsUnchanged": true,
+  "gpathResourceCount": 6,
+  "http": [
+    {
+      "url": "https://gpath.tech/",
+      "status": 200
+    },
+    {
+      "url": "http://193.122.221.201/healthz",
+      "status": 200
+    }
+  ],
+  "checks": {
+    "httpSmoke": "passed",
+    "browser": {
+      "passed": 18,
+      "skipped": 1,
+      "skipReason": "development entry is not part of production"
+    },
+    "localPublicBrowser": {
+      "passed": 19
+    },
+    "localAppBrowser": {
+      "passed": 9
+    },
+    "quality": "passed",
+    "unitAndIntegration": "passed",
+    "localBuild": "passed",
+    "gpathSpecificationsUnchanged": true
+  },
+  "workflows": {
+    "image": "https://github.com/RenzoAL7/TerraDock/actions/runs/39310957460",
+    "ci": "https://github.com/RenzoAL7/TerraDock/actions/runs/39310957276"
+  }
+}
