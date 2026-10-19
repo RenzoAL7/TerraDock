@@ -1,0 +1,24 @@
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web ./
+RUN npm run build:public
+ARG VCS_REF=local
+RUN VCS_REF="$VCS_REF" node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("dist-public/release.json", JSON.stringify({application:"terradock-public",revision:process.env.VCS_REF}) + "\n")'
+
+FROM nginxinc/nginx-unprivileged:stable-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+ARG VCS_REF=local
+LABEL org.opencontainers.image.source="https://github.com/RenzoAL7/TerraDock" \
+      org.opencontainers.image.description="TerraDock public static landing page" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.revision="$VCS_REF"
+COPY docker/public-nginx.conf /etc/nginx/nginx.conf
+COPY --chown=101:101 --from=build /app/web/dist-public /srv/terradock
+COPY LICENSE /usr/share/licenses/terradock/LICENSE
+USER 101:101
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

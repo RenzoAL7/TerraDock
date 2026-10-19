@@ -1,0 +1,85 @@
+name: Public landing image
+
+on:
+  push:
+    branches: [main, codex/landing-publica]
+    paths:
+      - web/**
+      - Dockerfile.public
+      - Dockerfile.public.dockerignore
+      - docker/public-nginx.conf
+      - scripts/smoke-public.mjs
+      - .github/workflows/public-site.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-site-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify public frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run format:check
+          npm run lint
+          npx playwright install --with-deps chromium
+          npm run test:public
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and smoke-test static container
+        run: |
+          docker build -f Dockerfile.public --build-arg VCS_REF="$GITHUB_SHA" -t terradock-public:check .
+          docker run -d --name terradock-public-check --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:8088:8080 terradock-public:check
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8088/healthz; then break; fi
+            sleep 1
+          done
+          EXPECTED_REVISION="$GITHUB_SHA" node scripts/smoke-public.mjs
+          PUBLIC_BASE_URL=http://127.0.0.1:8088 npm --prefix web run test:public
+          docker exec terradock-public-check sh -c 'test "$(id -u)" = 101 && test ! -e /srv/terradock/src && test ! -e /srv/terradock/.git'
+      - name: Stop test container
+        if: always()
+        run: docker rm -f terradock-public-check || true
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish static page
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.public
+          platforms: linux/amd64,linux/arm64
+          build-args: VCS_REF=${{ github.sha }}
+          push: true
+          tags: ghcr.io/renzoal7/terradock-public:sha-${{ github.sha }}
+          provenance: true
+      - name: Record immutable image
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf '%s\n' "ghcr.io/renzoal7/terradock-public@$IMAGE_DIGEST" | tee image.txt
+          printf '%s\n' "Image: ghcr.io/renzoal7/terradock-public@$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-image-digest
+          path: image.txt
+          retention-days: 30

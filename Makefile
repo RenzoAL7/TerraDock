@@ -7,7 +7,7 @@ PORT ?= 7331
 ASSETS ?= web/dist
 DEV_ORIGIN ?= http://127.0.0.1:5173
 
-.PHONY: help install build run dev-api dev-web check test e2e-install e2e
+.PHONY: help install build run dev-api dev-web check test e2e-install e2e public-dev public-build public-preview public-e2e
 
 help:
 	@echo 'install      Instalar dependencias Go y frontend'
@@ -19,6 +19,10 @@ help:
 	@echo 'test         Ejecutar pruebas Go y frontend'
 	@echo 'e2e-install  Instalar navegador Chromium para las pruebas'
 	@echo 'e2e          Ejecutar escenarios Playwright'
+	@echo 'public-dev   Desarrollar solo la portada en 127.0.0.1:5174'
+	@echo 'public-build Compilar solo la portada en web/dist-public'
+	@echo 'public-preview Servir la portada compilada en 127.0.0.1:4174'
+	@echo 'public-e2e   Verificar la portada estática en Chromium'
 
 install:
 	$(GO) mod download
@@ -54,3 +58,15 @@ e2e-install:
 
 e2e:
 	GO="$(GO)" $(NPM) --prefix web run test:e2e
+
+public-dev:
+	$(NPM) --prefix web run dev:public
+
+public-build:
+	$(NPM) --prefix web run build:public
+
+public-preview:
+	$(NPM) --prefix web run preview:public
+
+public-e2e:
+	$(NPM) --prefix web run test:public

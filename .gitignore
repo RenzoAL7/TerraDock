@@ -14,6 +14,7 @@ Thumbs.db
 /coverage/
 /web/node_modules/
 /web/dist/
+/web/dist-public/
 /web/coverage/
 /web/playwright-report/
 /web/test-results/
