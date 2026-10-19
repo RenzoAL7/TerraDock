@@ -8,6 +8,18 @@ Esta entrega es una **demo funcional en desarrollo**. Su alcance y sus límites 
 
 ![TerraDock con explorador de recursos, diagrama AWS e inspector de propiedades](docs/screenshots/workspace.png)
 
+## Página pública de presentación
+
+La portada tiene una entrada React independiente y muestra un ejemplo estático del producto. Distingue las capacidades de la demo local de las funciones web previstas; no abre proyectos, solicita credenciales ni llama a la API Go.
+
+```sh
+npm --prefix web ci          # Solo si faltan las dependencias
+make public-build           # Salida: web/dist-public/
+make public-preview         # http://127.0.0.1:4174
+```
+
+Sirve **solo `web/dist-public/`** para la portada. La aplicación local conserva su entrada y su salida `web/dist/`. Consulta los [comandos, alcance y validación de la portada](docs/public-landing.md). Esta entrega prepara el build local; la publicación con dominio corresponde a una tarea posterior.
+
 ## Probar la demo
 
 Requisitos para compilar: **Go 1.25 o superior**, **Node.js 24**, npm y Make. La primera instalación descarga dependencias. No necesitas Terraform ni credenciales AWS para analizar los ejemplos.
