@@ -1,0 +1,30 @@
+{
+  "url": "http://193.122.221.201/",
+  "sourceRevision": "32c678a3c7fc357454659ef81d675ead78886e42",
+  "manifestRevision": "fbe81631f3bdf70d6428c0c44be65f1467c59b47",
+  "image": "ghcr.io/renzoal7/terradock-public@sha256:674c2dc01bf792ba78c8189518dfb1672b860841d7bddf99c7337ba700751816",
+  "platforms": ["linux/amd64", "linux/arm64"],
+  "applications": [
+    {
+      "name": "gpath-prod",
+      "sync": "Synced",
+      "health": "Healthy",
+      "revision": "3363fe7cc28ae370d3799a7073159194d1d1262a"
+    },
+    {
+      "name": "terradock-public",
+      "sync": "Synced",
+      "health": "Healthy",
+      "revision": "fbe81631f3bdf70d6428c0c44be65f1467c59b47"
+    }
+  ],
+  "checks": {
+    "httpSmoke": "passed",
+    "browser": {
+      "passed": 9,
+      "skipped": 1,
+      "skipReason": "development entry is not part of production"
+    },
+    "gpathSpecificationsUnchanged": true
+  }
+}
