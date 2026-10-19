@@ -1,5 +1,4 @@
 import {
-  ArrowDown,
   ArrowRight,
   ArrowUpRight,
   Check,
@@ -248,16 +247,16 @@ export function LandingPage() {
               con contexto.
             </p>
             <div className="hero-actions">
-              <a className="button button-primary" href="#ejemplo">
-                Ver ejemplo <ArrowDown size={17} aria-hidden="true" />
+              <a className="button button-primary" href="./demo/">
+                Probar demo <ArrowRight size={17} aria-hidden="true" />
               </a>
               <a className="button button-secondary" href={repository}>
                 <GitBranch size={17} aria-hidden="true" /> Ver en GitHub
               </a>
             </div>
             <p className="hero-note">
-              <LockKeyhole size={13} aria-hidden="true" /> Explora esta muestra
-              sin cuenta ni credenciales cloud.
+              <LockKeyhole size={13} aria-hidden="true" /> Prueba el editor con
+              un ejemplo, sin cuenta ni credenciales cloud.
             </p>
             <div className="hero-details">
               <span>

@@ -153,7 +153,10 @@ export function EditorExample() {
       </div>
       <figcaption id="example-caption">
         Vista ilustrativa del editor. No edita archivos ni representa
-        infraestructura desplegada.
+        infraestructura desplegada.{" "}
+        <a className="text-link" href="./demo/">
+          Abrir demo interactiva →
+        </a>
       </figcaption>
     </figure>
   );

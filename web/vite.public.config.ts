@@ -12,8 +12,24 @@ export default defineConfig({
   server: { host: "127.0.0.1", port: 5174, strictPort: true },
   preview: { host: "127.0.0.1", port: 4174, strictPort: true },
   build: {
+    assetsInlineLimit: 0,
+    rollupOptions: {
+      input: {
+        landing: fileURLToPath(
+          new URL("./public-site/index.html", import.meta.url),
+        ),
+        demo: fileURLToPath(
+          new URL("./public-site/demo/index.html", import.meta.url),
+        ),
+      },
+    },
     outDir: fileURLToPath(new URL("./dist-public", import.meta.url)),
     emptyOutDir: true,
     sourcemap: false,
+  },
+  worker: {
+    rollupOptions: {
+      output: { entryFileNames: "assets/demo-engine-[hash].js" },
+    },
   },
 });
