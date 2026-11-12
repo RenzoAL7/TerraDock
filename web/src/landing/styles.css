@@ -137,7 +137,7 @@ nav a:hover,
   text-decoration: underline;
   text-underline-offset: 5px;
 }
-.access-button {
+.source-link {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -151,7 +151,11 @@ nav a:hover,
   font-weight: 650;
   text-align: left;
 }
-.coming-soon {
+.source-link:hover {
+  border-color: #b9cdc1;
+  color: var(--green-dark);
+}
+.source-license {
   display: block;
   margin-top: 2px;
   font-size: 10px;
@@ -1008,7 +1012,7 @@ h3 {
   .header-inner nav {
     gap: 11px;
   }
-  .access-button {
+  .source-link {
     gap: 6px;
     padding: 8px 10px;
   }
@@ -1051,11 +1055,11 @@ h3 {
     padding-top: 3px;
     margin-top: 5px;
   }
-  .access-button {
+  .source-link {
     padding: 8px 10px;
     font-size: 11px;
   }
-  .coming-soon {
+  .source-license {
     font-size: 9px;
   }
   .hero {
