@@ -45,13 +45,18 @@ async function resetDemo(request: APIRequestContext) {
   expect(response.ok()).toBeTruthy();
 }
 
-async function openLocalFolder(page: Page): Promise<string> {
+async function openLocalFolder(
+  page: Page,
+  files: Record<string, string> = { "main.tf": localSource },
+  firstResource = "aws_instance.web",
+): Promise<string> {
   // Never write fixtures into a developer's project or a reused application.
   expect(basename(session.root)).toBe("projects");
   expect(basename(dirname(session.root))).toMatch(/^terradock-e2e-/);
   const directory = await mkdtemp(join(session.root, "workspace-"));
   createdDirectories.push(directory);
-  await writeFile(join(directory, "main.tf"), localSource);
+  for (const [name, content] of Object.entries(files))
+    await writeFile(join(directory, name), content);
 
   await page
     .getByRole("button", { name: "Abrir carpeta", exact: true })
@@ -73,7 +78,7 @@ async function openLocalFolder(page: Page): Promise<string> {
   expect((await navigated).ok()).toBeTruthy();
   await dialog.getByRole("button", { name: "Abrir esta carpeta" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("resource-aws_instance.web")).toBeVisible();
+  await expect(page.getByTestId(`resource-${firstResource}`)).toBeVisible();
   return directory;
 }
 
@@ -87,9 +92,13 @@ async function openInstanceCode(page: Page, id = "aws_instance.app_a") {
   ).toBeVisible();
 }
 
-async function replaceEditorContent(page: Page, content: string) {
+async function replaceEditorContent(
+  page: Page,
+  content: string,
+  file = "main.tf",
+) {
   const editor = page.getByRole("textbox", {
-    name: /^Código Terraform (?:.*\/)?main\.tf$/,
+    name: new RegExp(`^Código Terraform (?:.*/)?${file.replace(".", "\\.")}$`),
   });
   // Monaco paints code above its accessible EditContext input. Focus that
   // keyboard target instead of clicking the covered input's coordinates.
@@ -507,4 +516,100 @@ test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   await expect(
     page.getByRole("button", { name: "Aplicar plan", exact: true }),
   ).toBeDisabled();
+});
+
+test("descartar el borrador también descarta lo escrito en el inspector", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("resource-aws_instance.app_a").click();
+  await page.getByLabel("instance_type").fill("t3.medium");
+  await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
+    "t3.medium",
+  );
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Descartar borrador", exact: true })
+    .click();
+  await expect(page.getByLabel("instance_type")).toHaveValue("t3.small");
+  await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
+    "t3.small",
+  );
+});
+
+/** 300 resource blocks over several files: VPCs, subnets, groups, instances. */
+function largeProject(count: number): Record<string, string> {
+  const files: Record<string, string> = {};
+  let body = "";
+  for (let i = 0; i < count; i++) {
+    const vpc = Math.floor(i / 4) * 4;
+    body +=
+      i % 4 === 0
+        ? `resource "aws_vpc" "v${i}" {\n  cidr_block = "10.${i % 250}.0.0/16"\n}\n\n`
+        : i % 4 === 1
+          ? `resource "aws_subnet" "s${i}" {\n  vpc_id = aws_vpc.v${vpc}.id\n  cidr_block = "10.${vpc % 250}.1.0/24"\n}\n\n`
+          : i % 4 === 2
+            ? `resource "aws_security_group" "g${i}" {\n  vpc_id = aws_vpc.v${vpc}.id\n  description = "group ${i}"\n}\n\n`
+            : `resource "aws_instance" "i${i}" {\n  ami = "ami-123"\n  instance_type = "t3.micro"\n  subnet_id = aws_subnet.s${i - 2}.id\n  vpc_security_group_ids = [aws_security_group.g${i - 1}.id]\n}\n\n`;
+    if (i % 40 === 39 || i === count - 1) {
+      files[`part${String(Object.keys(files).length).padStart(2, "0")}.tf`] =
+        body;
+      body = "";
+    }
+  }
+  return files;
+}
+
+test("con 300 recursos, archivo, código e inspector llegan al diagrama en menos de 1 s", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  const files = largeProject(300);
+  const directory = await openLocalFolder(page, files, "aws_vpc.v0");
+  const id = "aws_instance.i3";
+  const node = `[data-testid="node-${id}"]`;
+  const reached = async (text: string, started = Date.now()) => {
+    await page.waitForFunction(
+      ([selector, value]) =>
+        document.querySelector(selector)?.textContent?.includes(value),
+      [node, text] as const,
+      { polling: "raf", timeout: 5_000 },
+    );
+    return Date.now() - started;
+  };
+  // Selecting from the explorer must bring the node on screen and, in split
+  // view, its block into the editor.
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  await page.getByTestId(`resource-${id}`).click();
+  await expect(page.locator(node)).toBeVisible();
+  const timings: Record<string, number> = {};
+  const external = files["part00.tf"].replace(
+    /("i3" \{\n {2}ami = "ami-123"\n {2}instance_type = )"t3\.micro"/,
+    '$1"t3.ext"',
+  );
+  let started = Date.now();
+  await writeFile(join(directory, "part00.tf"), external);
+  timings.archivo = await reached("t3.ext", started);
+  started = Date.now();
+  await page.getByLabel("instance_type").fill("t3.inspector");
+  timings.inspector = await reached("t3.inspector", started);
+  await expect(page.locator(".view-lines")).toContainText("t3.inspector");
+  started = Date.now();
+  await replaceEditorContent(
+    page,
+    external.replace('"t3.ext"', '"t3.codigo"'),
+    "part00.tf",
+  );
+  timings.codigo = await reached("t3.codigo", started);
+  test.info().annotations.push({
+    type: "latencia (ms)",
+    description: JSON.stringify(timings),
+  });
+  for (const [path, ms] of Object.entries(timings))
+    expect(ms, `${path} → diagrama`).toBeLessThan(1_000);
 });

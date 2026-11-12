@@ -89,6 +89,8 @@ export function useLivePreview(
   project: Project | null,
   drafts: Record<string, Draft>,
   delay = 60,
+  /** Set to true right before a draft change that should skip the debounce. */
+  urgent?: { current: boolean },
 ): LiveView | null {
   const overrides = useMemo(
     () => (project ? draftOverrides(project, drafts) : {}),
@@ -114,6 +116,9 @@ export function useLivePreview(
       return;
     }
     setPending(true);
+    // Typing is debounced; one-shot changes (inspector edits) are analyzed now.
+    const wait = urgent?.current ? 0 : delay;
+    if (urgent) urgent.current = false;
     const timer = window.setTimeout(() => {
       liveApi
         .analyze(projectId, overrides)
@@ -127,10 +132,10 @@ export function useLivePreview(
         .catch(() => {
           if (id === request.current) setPending(false);
         });
-    }, delay);
+    }, wait);
     return () => clearTimeout(timer);
     // `revision` re-runs the preview when saved files change underneath drafts.
-  }, [projectId, revision, overrides, hasDrafts, delay]);
+  }, [projectId, revision, overrides, hasDrafts, delay, urgent]);
 
   return useMemo(
     () =>

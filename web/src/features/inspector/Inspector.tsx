@@ -58,7 +58,8 @@ interface Props {
   onClose: () => void;
 }
 
-const APPLY_DELAY = 180;
+// Short pause so fast typing in a field does not send one edit per key.
+const APPLY_DELAY = 90;
 
 export function Inspector({
   resource,
