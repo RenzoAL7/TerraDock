@@ -8,11 +8,11 @@ Objetivo: un cambio en archivo, código o inspector llega al diagrama en menos d
 
 Latencia p95 desde el cambio hasta que el nodo muestra el valor nuevo.
 
-| Camino           | 300 antes | 1000 antes | 300 ahora | 1000 ahora |
-| ---------------- | --------: | ---------: | --------: | ---------: |
-| Inspector        |    352 ms |     739 ms |    159 ms |     284 ms |
-| Código           |    110 ms |     358 ms |     95 ms |     132 ms |
-| Archivo externo  |     67 ms |     214 ms |     50 ms |      84 ms |
+| Camino          | 300 antes | 1000 antes | 300 ahora | 1000 ahora |
+| --------------- | --------: | ---------: | --------: | ---------: |
+| Inspector       |    352 ms |     739 ms |    159 ms |     284 ms |
+| Código          |    110 ms |     358 ms |     95 ms |     132 ms |
+| Archivo externo |     67 ms |     214 ms |     50 ms |      84 ms |
 
 El servidor analiza en 5–14 ms (`go test -bench Parse ./internal/terraform`:
 3,6 ms con 300 recursos y 12,5 ms con 1000). La respuesta pesa 0,25 MB con 300
