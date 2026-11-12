@@ -53,19 +53,19 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 
 ## Fuera de esta entrega
 
-- Ejecución de `terraform init`, `validate`, `plan`, `apply` o `destroy`.
-- Importación o comparación de planes y estados Terraform.
+- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci, desde su pestaña y sobre una copia privada (ver el [README](../README.md#despliegue-local-con-floci)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
+- Importar un plan JSON arbitrario o comparar atributos con un estado Terraform. El plan generado contra Floci sí se muestra sobre el diagrama.
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
 - Integración Git, colaboración multiusuario y sincronización en la nube.
-- Binarios de release, instaladores y actualizaciones automáticas.
-- Certificación de funcionamiento en Windows y Linux de escritorio, benchmark de 300 recursos y pruebas con múltiples usuarios.
+- Binarios de release, instaladores y actualizaciones automáticas. Hoy se compila desde el código fuente y el ejecutable necesita `web/dist`. Los binarios para ARM64 y AMD64 en macOS, Linux y Windows, con el frontend embebido, están previstos en la fase 9 del [roadmap](roadmap.md).
+- Certificación de funcionamiento en Windows y Linux de escritorio y pruebas con múltiples usuarios. La sincronización con 300 recursos sí está medida: el p95 queda por debajo de 1 s en una MacBook ARM con Chromium (ver [rendimiento](performance.md)), pero no en otras máquinas ni sistemas.
 
 ## Ejecución local
 
 Go sirve la aplicación en loopback y la raíz elegida delimita el acceso a proyectos. No está diseñada para exponer el puerto a Internet ni para operar como un servicio multiusuario. El frontend y Monaco forman parte de los assets locales compilados.
 
-En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. La instalación de nuevas dependencias y las futuras operaciones Terraform tendrán contextos de red distintos del análisis de archivos.
+En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. La pestaña Floci es la única que ejecuta Terraform: `terraform init` puede descargar providers y necesita red la primera vez; el emulador se contacta solo en endpoints locales.
 
 ## Estado del roadmap
 
