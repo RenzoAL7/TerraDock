@@ -103,6 +103,7 @@ terradock
   - Tus variables `AWS_*` reales se descartan.
 - Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo se guardan en memoria.
 - Solo se aceptan endpoints locales (`localhost`, `127.0.0.1` o `*.floci.io`). Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
+- **Red:** ver y editar no usa la red, pero esta pestaña sí ejecuta Terraform. `terraform init` puede descargar los providers del registro y necesita red la primera vez; después se reutiliza la caché de plugins de TerraDock.
 
 ## Para desarrolladores
 
