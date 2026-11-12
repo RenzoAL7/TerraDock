@@ -116,11 +116,12 @@ test("explains availability and gives every link a real destination", async ({
       expect(await response.text()).toContain("Demo interactiva");
     } else {
       expect(href).toMatch(
-        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#|\/blob\/main\/docs\/limitations\.md$)/,
+        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#|\/blob\/main\/docs\/limitations\.md$|\/releases\/latest(?:\/download\/terradock_(?:darwin|linux|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip))?$)|^https:\/\/floci\.io$/,
       );
     }
   }
   for (const [label, hash] of [
+    ["Descargar", "#descargar"],
     ["Cómo funciona", "#como-funciona"],
     ["Funciones", "#funciones"],
   ]) {
@@ -215,3 +216,30 @@ for (const width of [320, 390, 601, 768, 1024, 1440]) {
     }
   });
 }
+
+test("offers a download for every operating system and architecture", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#descargar");
+  const links = await section
+    .locator("a.download-link")
+    .evaluateAll((items) => items.map((item) => item.getAttribute("href")));
+  const files = links.map((href) => href!.split("/").pop());
+  expect(files.sort()).toEqual(
+    [
+      "terradock_darwin_amd64.tar.gz",
+      "terradock_darwin_arm64.tar.gz",
+      "terradock_linux_amd64.tar.gz",
+      "terradock_linux_arm64.tar.gz",
+      "terradock_windows_amd64.zip",
+      "terradock_windows_arm64.zip",
+    ].sort(),
+  );
+  for (const name of ["macOS", "Windows", "Linux"])
+    await expect(
+      section.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  await expect(section.getByText("Después de descargar")).toBeVisible();
+  await expect(section.getByText("¿Qué necesitas?")).toBeVisible();
+});

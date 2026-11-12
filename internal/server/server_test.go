@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
@@ -279,6 +280,30 @@ func TestStaticAppFallbackAndCacheHeaders(t *testing.T) {
 	missing.static(responseRecorder, httptest.NewRequest("GET", "http://127.0.0.1/", nil))
 	if responseRecorder.Code != http.StatusServiceUnavailable {
 		t.Fatal("missing build should produce a useful error")
+	}
+}
+
+func TestStaticServesEmbeddedFrontend(t *testing.T) {
+	api := setupAPI(t)
+	files := fstest.MapFS{
+		"index.html":         {Data: []byte("<!doctype html><title>embedded</title>")},
+		"assets/app-1a2b.js": {Data: []byte("console.log('embedded')")},
+	}
+	app, err := New(api.app.workspace, t.TempDir(), Options{Files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{"/": "embedded</title>", "/workspace": "embedded</title>", "/assets/app-1a2b.js": "console.log"} {
+		recorder := httptest.NewRecorder()
+		app.static(recorder, httptest.NewRequest("GET", "http://127.0.0.1"+path, nil))
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), want) {
+			t.Fatalf("%s: status %d body %q", path, recorder.Code, recorder.Body.String())
+		}
+	}
+	recorder := httptest.NewRecorder()
+	app.static(recorder, httptest.NewRequest("GET", "http://127.0.0.1/../../etc/passwd.txt", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("traversal should not resolve, got %d", recorder.Code)
 	}
 }
 

@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,12 +24,14 @@ import (
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
 )
 
-const Version = "0.1.0-demo"
+// Version is replaced at release time with -ldflags "-X .../server.Version=…".
+var Version = "0.1.0-demo"
 
 type Server struct {
 	workspace *workspace.Manager
 	token     string
 	assets    string
+	files     fs.FS
 	devOrigin string
 	floci     *floci.Runner
 }
@@ -38,6 +42,9 @@ type Options struct {
 	DevOrigin string
 	// Floci is optional; without it the deployment endpoints report unavailable.
 	Floci *floci.Runner
+	// Files, when set, serves the frontend from this file system (the copy
+	// embedded in release binaries) instead of the assets directory.
+	Files fs.FS
 }
 
 func New(manager *workspace.Manager, assets string, options ...Options) (*Server, error) {
@@ -49,9 +56,13 @@ func New(manager *workspace.Manager, assets string, options ...Options) (*Server
 	}
 	devOrigin := ""
 	var runner *floci.Runner
+	var files fs.FS = os.DirFS(assets)
 	if len(options) == 1 {
 		devOrigin = options[0].DevOrigin
 		runner = options[0].Floci
+		if options[0].Files != nil {
+			files = options[0].Files
+		}
 	}
 	if devOrigin != "" {
 		u, err := url.Parse(devOrigin)
@@ -63,7 +74,7 @@ func New(manager *workspace.Manager, assets string, options ...Options) (*Server
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	return &Server{workspace: manager, token: hex.EncodeToString(b), assets: assets, devOrigin: devOrigin, floci: runner}, nil
+	return &Server{workspace: manager, token: hex.EncodeToString(b), assets: assets, files: files, devOrigin: devOrigin, floci: runner}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -414,24 +425,22 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "not_found", "La ruta de API no existe.")
 		return
 	}
-	clean := filepath.Clean(filepath.FromSlash("/" + r.URL.Path))
-	path := filepath.Join(s.assets, strings.TrimPrefix(clean, string(filepath.Separator)))
-	if info, err := os.Stat(path); err == nil && !info.IsDir() {
-		if strings.Contains(filepath.Base(path), "-") && strings.HasPrefix(r.URL.Path, "/assets/") {
+	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if info, err := fs.Stat(s.files, name); name != "" && err == nil && !info.IsDir() {
+		if strings.Contains(path.Base(name), "-") && strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
-		http.ServeFile(w, r, path)
+		http.ServeFileFS(w, r, s.files, name)
 		return
 	}
 	if filepath.Ext(r.URL.Path) != "" {
 		http.NotFound(w, r)
 		return
 	}
-	index := filepath.Join(s.assets, "index.html")
-	if _, err := os.Stat(index); err != nil {
+	if _, err := fs.Stat(s.files, "index.html"); err != nil {
 		http.Error(w, "TerraDock frontend is not built. Run make build, or use the Vite development server.", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeFile(w, r, index)
+	http.ServeFileFS(w, r, s.files, "index.html")
 }

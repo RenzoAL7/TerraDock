@@ -9,6 +9,7 @@ Thumbs.db
 # Local toolchains and build products
 .tools/
 /bin/
+/dist/
 *.test
 *.out
 /coverage/

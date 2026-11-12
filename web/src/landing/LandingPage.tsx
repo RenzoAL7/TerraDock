@@ -3,18 +3,18 @@ import {
   ArrowUpRight,
   Check,
   Code2,
+  Download as DownloadIcon,
   FileCode2,
   FolderOpen,
-  GitBranch,
   Layers3,
   LockKeyhole,
   Network,
   PencilLine,
 } from "lucide-react";
+import { Download, repository } from "./Download";
 import { EditorExample } from "./EditorExample";
 import fontLicensesUrl from "./font-licenses.txt?url";
 
-const repository = "https://github.com/RenzoAL7/TerraDock";
 const documentation = `${repository}#readme`;
 
 function Brand() {
@@ -34,6 +34,7 @@ function Header() {
       <div className="page-width header-inner">
         <Brand />
         <nav aria-label="Navegación principal">
+          <a href="#descargar">Descargar</a>
           <a href="#como-funciona">Cómo funciona</a>
           <a href="#funciones">Funciones</a>
           <a href={documentation}>
@@ -55,7 +56,7 @@ const steps = [
   {
     icon: FolderOpen,
     title: "Abre tu Terraform",
-    text: "En la aplicación local, elige una carpeta con archivos .tf. Tu configuración es el punto de partida.",
+    text: "Descarga TerraDock, ábrelo y elige una carpeta con archivos .tf. Tu configuración es el punto de partida.",
   },
   {
     icon: Network,
@@ -65,7 +66,7 @@ const steps = [
   {
     icon: PencilLine,
     title: "Edita con contexto",
-    text: "Modifica el código o los valores literales compatibles y revisa cómo cambia su representación.",
+    text: "Cambia el código o las propiedades y el diagrama se actualiza al instante, en ambos sentidos.",
   },
 ];
 
@@ -110,12 +111,16 @@ const currentFeatures = [
     text: "Recursos y referencias del módulo Terraform que abras en tu equipo.",
   },
   {
-    title: "Edición local",
-    text: "Código, propiedades literales compatibles y navegación al origen.",
+    title: "Sincronización en tiempo real",
+    text: "Lo que escribes en el código, en el inspector o en otro editor llega al diagrama al momento.",
   },
   {
-    title: "Diagnósticos y revisión de cambios",
-    text: "Errores de sintaxis y detección de conflictos al guardar archivos.",
+    title: "Diagnósticos y autoguardado",
+    text: "Errores de sintaxis, guardado automático de HCL válido y protección ante conflictos.",
+  },
+  {
+    title: "Despliegue local con Floci",
+    text: "Plan, apply y destroy contra un AWS simulado en tu equipo, sin tocar tu cuenta real.",
   },
 ];
 
@@ -129,8 +134,8 @@ const plannedFeatures = [
     text: "Conectar repositorios y proponer cambios mediante pull requests.",
   },
   {
-    title: "Plan, aprobación y apply",
-    text: "Revisar y autorizar ejecuciones de Terraform para una revisión concreta.",
+    title: "Plan y apply en la nube",
+    text: "Revisar y autorizar ejecuciones de Terraform contra cuentas reales.",
   },
 ];
 
@@ -206,21 +211,6 @@ function Features() {
   );
 }
 
-function LocalAppCallout() {
-  return (
-    <section className="local-callout page-width" aria-labelledby="local-title">
-      <div>
-        <p className="eyebrow">SIGUE EXPLORANDO</p>
-        <h2 id="local-title">Lleva la claridad a tu propio código.</h2>
-        <p>Consulta cómo probar la demo local de TerraDock en tu equipo.</p>
-      </div>
-      <a className="button button-dark" href={`${repository}#probar-la-demo`}>
-        Ver guía de inicio <ArrowUpRight size={17} aria-hidden="true" />
-      </a>
-    </section>
-  );
-}
-
 export function LandingPage() {
   return (
     <>
@@ -250,8 +240,8 @@ export function LandingPage() {
               <a className="button button-primary" href="./demo/">
                 Probar demo <ArrowRight size={17} aria-hidden="true" />
               </a>
-              <a className="button button-secondary" href={repository}>
-                <GitBranch size={17} aria-hidden="true" /> Ver en GitHub
+              <a className="button button-secondary" href="#descargar">
+                <DownloadIcon size={17} aria-hidden="true" /> Descargar
               </a>
             </div>
             <p className="hero-note">
@@ -291,8 +281,8 @@ export function LandingPage() {
           </span>
         </div>
         <HowItWorks />
+        <Download />
         <Features />
-        <LocalAppCallout />
       </main>
       <footer className="site-footer">
         <div className="page-width footer-inner">
