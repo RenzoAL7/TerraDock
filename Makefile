@@ -52,6 +52,7 @@ check:
 test:
 	$(GO) test -race $(GO_PACKAGES)
 	$(NPM) --prefix web run test
+	node --test scripts/promote.test.mjs
 
 e2e-install:
 	cd web && $(NPM) exec playwright install chromium

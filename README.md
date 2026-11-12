@@ -10,7 +10,7 @@ Esta entrega es una **demo funcional en desarrollo**. Su alcance y sus límites 
 
 ## Página pública de presentación
 
-La [portada pública](http://193.122.221.201/) tiene una entrada React independiente y enlaza una [demo interactiva en el navegador](http://193.122.221.201/demo/). Puedes editar el HCL, seleccionar recursos, cambiar propiedades literales y descargar tu ejemplo. El análisis funciona en memoria; no necesita una cuenta ni llama a la API Go o a proveedores cloud. El acceso y las integraciones pendientes siguen identificados como futuros.
+La [portada pública](https://terradock.renzoaguilar.dev/) tiene una entrada React independiente y enlaza una [demo interactiva en el navegador](https://terradock.renzoaguilar.dev/demo/). Puedes editar el HCL, seleccionar recursos, cambiar propiedades literales y descargar tu ejemplo. El análisis funciona en memoria; no necesita una cuenta ni llama a la API Go o a proveedores cloud. El acceso y las integraciones pendientes siguen identificados como futuros.
 
 Para construir ambas páginas necesitas Go 1.25 o superior, Node.js 24 y npm:
 
@@ -20,7 +20,7 @@ make public-build           # Salida: web/dist-public/
 make public-preview         # http://127.0.0.1:4174
 ```
 
-Sirve **solo `web/dist-public/`**, que contiene la portada y `/demo/`. El resultado es estático y no requiere un servidor Go. La aplicación local conserva su entrada y su salida `web/dist/`. Consulta la [guía de la demo pública](docs/browser-demo.md), los [comandos de la portada](docs/public-landing.md) y el [despliegue en GHCR/K3s](docs/public-deployment.md). El acceso por IP usa HTTP hasta configurar dominio y TLS.
+Sirve **solo `web/dist-public/`**, que contiene la portada y `/demo/`. El resultado es estático y no requiere un servidor Go. La aplicación local conserva su entrada y su salida `web/dist/`. Consulta la [guía de la demo pública](docs/browser-demo.md), los [comandos de la portada](docs/public-landing.md) y el [despliegue en GHCR/K3s](docs/public-deployment.md). Cada push a `main` que cambia la portada construye una imagen ARM64, la prueba y la promueve automáticamente a K3s-Cortex. Un monitor revisa el sitio cada 3 horas.
 
 ## Probar la demo
 
