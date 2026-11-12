@@ -76,7 +76,7 @@ Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así 
 
 - **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones.
 - **Editar en ambos sentidos, en tiempo real.**
-  - Lo que escribes en el código actualiza el diagrama y el inspector en unos 60 ms.
+  - Lo que escribes en el código actualiza el diagrama y el inspector. El análisis arranca 60 ms después de la última tecla; con 300 recursos, el p95 medido hasta que el diagrama muestra el cambio es de unos 95 ms.
   - Lo que cambias en el inspector se escribe en el código al momento.
   - Si editas el archivo con otro programa (VS Code, vim…), el cambio aparece al instante.
 - **Navegar.** Al seleccionar un nodo se marca su bloque en el código. Al mover el cursor por el código se selecciona su nodo.
