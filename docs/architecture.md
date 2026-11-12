@@ -12,6 +12,8 @@ flowchart LR
   API --> FS[Archivos de la raíz permitida]
   Parser --> Model[Modelo con rangos y referencias]
   Model --> UI
+  API -. pestaña Floci .-> Runner[Ejecutor Terraform]
+  Runner --> Floci[Emulador Floci local]
 ```
 
 ## Responsabilidades
@@ -19,7 +21,8 @@ flowchart LR
 | Capa | Responsabilidad | Límite |
 | --- | --- | --- |
 | `cmd/terradock` | Opciones de arranque y servidor HTTP | No contiene lógica de interpretación |
-| `internal/` | Modelo, interpretación, acceso al proyecto y API | No ejecuta Terraform ni consulta AWS |
+| `internal/` | Modelo, interpretación, acceso al proyecto y API | El análisis y la edición no ejecutan Terraform ni consultan AWS |
+| `internal/floci` | `terraform plan`, `apply` y `destroy` contra el emulador Floci, solo a petición del usuario | Solo endpoints locales; trabaja sobre una copia privada y sin las variables `AWS_*` reales. `terraform init` puede descargar providers |
 | `web/src/` | Navegación, borradores, editor, canvas e inspector | El diagrama se deriva del modelo interpretado |
 | `examples/` | Entradas didácticas para probar el flujo | No son un despliegue verificado |
 | `web/tests/` | Escenarios de usuario sobre servicios locales | No validan recursos en AWS |
@@ -50,9 +53,14 @@ En modo local, `--root` delimita el espacio accesible. Abrir una carpeta selecci
 | `POST /api/open` | `path`: carpeta del módulo raíz |
 | `PUT /api/files` | `projectId`, `path`, `content`, `expectedRevision` |
 | `PATCH /api/properties` | `projectId`, `resourceId`, `property`, `value`, `expectedRevision` |
+| `POST /api/analyze` | `projectId`, `files` (ruta → contenido del borrador); devuelve recursos, relaciones y diagnósticos sin escribir |
+| `POST /api/edit-draft` | `projectId`, `path`, `content`, `resourceId`, `property`, `value`; devuelve el `content` editado sin escribir |
+| `GET /api/floci` | Estado: endpoint, alcance, Terraform detectado, trabajo actual, plan, recursos desplegados y variables |
+| `POST /api/floci/run` | `action` (`start`, `plan`, `apply`, `destroy` o `refresh`), `projectId`, `variables`; responde `202` con el trabajo o `409` si hay otro en curso |
+| `POST /api/floci/cancel` | Cuerpo `{}`; cancela el trabajo en curso |
 | `GET /api/events` | Stream SSE con eventos `project` y snapshots completos |
 
-La revisión esperada corresponde al hash del archivo de origen, también para editar una propiedad. El servidor verifica `projectId` bajo el mismo bloqueo que el guardado; una operación destinada al proyecto anterior recibe `409 project_conflict`, incluso cuando los dos proyectos contienen archivos con el mismo nombre y contenido. Una revisión obsoleta recibe `409 revision_conflict`. Las respuestas de error incluyen `code` y `error`.
+Las rutas de Floci responden `503 floci_unavailable` si la integración no está activa. La revisión esperada corresponde al hash del archivo de origen, también para editar una propiedad. El servidor verifica `projectId` bajo el mismo bloqueo que el guardado; una operación destinada al proyecto anterior recibe `409 project_conflict`, incluso cuando los dos proyectos contienen archivos con el mismo nombre y contenido. Una revisión obsoleta recibe `409 revision_conflict`. Las respuestas de error incluyen `code` y `error`.
 
 ## Orden de actualizaciones y borradores
 
@@ -70,14 +78,15 @@ El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de
 
 Durante el desarrollo, Vite sirve el frontend en `127.0.0.1:5173` y reenvía la API al proceso Go en `127.0.0.1:7331`. `make dev-api` permite el origen exacto de Vite mediante `--dev-origin`; esa excepción es opcional y no se necesita para el build. Durante la ejecución del build, Go sirve los archivos de `web/dist` y la API desde un mismo puerto. Monaco y sus workers se incluyen en la compilación del frontend.
 
-La distribución inicial consiste en un ejecutable y un directorio de assets. El empaquetado de un único archivo, los instaladores y las actualizaciones automáticas son trabajo posterior.
+Hoy la distribución consiste en el ejecutable `bin/terradock` y el directorio `web/dist`, que se indica con `--assets`. El ejecutable todavía no embebe el frontend. Un único binario con el frontend embebido, la apertura automática del navegador, los binarios de release, los instaladores y las actualizaciones automáticas están previstos en la fase 9 del [roadmap](roadmap.md).
 
 ## Decisiones deliberadas
 
 - La interfaz corre en el navegador para evitar un runtime de escritorio adicional.
 - Go comparte la responsabilidad del servidor y el análisis HCL para mantener las operaciones de archivos fuera del navegador.
 - El diseño visual y el código se sincronizan mediante un modelo común con origen verificable.
-- El estado de despliegue, la importación de planes y las operaciones Terraform quedan fuera de esta entrega.
+- Terraform solo se ejecuta desde la pestaña Floci, a petición del usuario y contra el emulador local. Abrir una carpeta, analizar o editar nunca lo ejecuta.
+- La importación de planes JSON arbitrarios y la ejecución contra cuentas AWS reales quedan fuera de esta entrega.
 - Se publica compatibilidad parcial antes de ampliar recursos o evaluación semántica.
 
 Referencias técnicas: [HCL](https://github.com/hashicorp/hcl), [módulos Terraform](https://developer.hashicorp.com/terraform/language/files), [Monaco Editor](https://github.com/microsoft/monaco-editor) y [React Flow](https://reactflow.dev/).
