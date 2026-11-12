@@ -54,6 +54,31 @@ Para trabajar con otra carpeta:
 - Dos ejemplos editables en memoria para experimentar con la interacción entre código y gráfico.
 - Observación de cambios externos y protección contra guardados obsoletos.
 
+## Sincronización en tiempo real
+
+Código y diagrama se mantienen al día en ambos sentidos, sin pulsar Guardar:
+
+- **Código → diagrama:** al escribir en el editor, el diagrama, el inspector y el análisis se recalculan sobre el borrador (unos 60 ms después de la última tecla). Si el HCL queda inválido, el diagrama conserva la última versión válida y muestra los errores.
+- **Diagrama → código:** al cambiar una propiedad literal en el inspector, se aplica al texto del archivo y el editor la muestra de inmediato.
+- **Archivo → diagrama:** los cambios que haces con otro editor (VS Code, vim…) llegan al instante gracias a eventos nativos del sistema de archivos, con un sondeo de respaldo.
+- **Autoguardado:** está activo por defecto. Escribe en el archivo cuando el borrador es HCL válido. Si otro programa modificó el archivo, se detiene y conserva tu borrador. Puedes desactivarlo desde el editor y guardar con ⌘/Ctrl + S.
+- En la vista dividida, al seleccionar un nodo se marca su bloque en el código y, al mover el cursor por el código, se selecciona el recurso correspondiente.
+
+## Despliegue local con Floci
+
+La pestaña **Floci** ejecuta `terraform plan`, `apply` y `destroy` contra [Floci](https://floci.io), un emulador local de AWS. Requisitos: Docker, la CLI `floci` y Terraform u OpenTofu en el `PATH`.
+
+```sh
+floci start                 # o el botón «Iniciar Floci» del panel
+./bin/terradock --root ~/proyectos --floci-endpoint http://localhost:4566
+```
+
+- El plan marca cada nodo del diagrama con su acción (`+ crear`, `~ actualizar`, `± reemplazar`, `− eliminar`). Después de aplicar, los nodos presentes en el estado aparecen como `✓ en Floci`.
+- «Aplicar» ejecuta exactamente el plan revisado. Si los archivos cambian, el plan queda desactualizado y hay que generar otro.
+- Terraform se ejecuta sobre una **copia privada** de los archivos guardados, ubicada en la caché del usuario. Tu carpeta no se modifica. Los endpoints, las credenciales de prueba y el backend local solo existen en esa copia, y se descartan las variables `AWS_*` reales del entorno.
+- Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que faltan se pueden escribir en el panel y se guardan solo en memoria.
+- Solo se aceptan endpoints locales (`localhost`, `127.0.0.1` o `*.floci.io`).
+
 El diagrama representa **configuración declarada**. No acredita infraestructura desplegada ni predice acciones de un plan. Las expresiones que requieren contexto de Terraform se conservan sin inventar valores. Consulta la [matriz de compatibilidad y limitaciones](docs/limitations.md) antes de usar un proyecto real.
 
 ## Desarrollo

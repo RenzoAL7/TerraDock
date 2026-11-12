@@ -248,7 +248,7 @@ Todas las casillas representan trabajo pendiente. No se asignará un porcentaje 
 | V5 — Impacto y orden | Dependencias transitivas, impacto potencial y contraste con acciones del plan; orden conceptual de dependencias | Distingue relación estática de modificación planificada y de impacto en ejecución; no presenta un grafo reducido como secuencia exacta de Terraform |
 | V6 — Networking | Evaluación estática de rutas y reglas compatibles; Trace Connection con supuestos y resultado permitido/bloqueado/indeterminado según el modelo | Un conjunto publicado de casos y limitaciones verifica el modelo; reglas de seguridad aisladas no se presentan como prueba de conectividad real |
 | V7 — Git visual | Comparación con commits/ramas, cambios arquitectónicos y ayuda para revisión | Comparaciones reproducibles; Git no sustituye la gestión de borradores ni sobrescribe cambios locales |
-| V8 — Floci y despliegue local | Integración opcional, ejecución explícita en el entorno local y comparación con su estado | Se verifica contra el emulador real y se distinguen sus límites respecto a AWS; la integración no altera endpoints de proyectos silenciosamente |
+| V8 — Floci y despliegue local (en curso: plan/apply/destroy y marcas en el diagrama) | Integración opcional, ejecución explícita en el entorno local y comparación con su estado | Se verifica contra el emulador real y se distinguen sus límites respecto a AWS; la integración no altera endpoints de proyectos silenciosamente |
 
 La evaluación completa de IAM, estimación de costos, otros proveedores, colaboración, AI y asistencia avanzada de edición mediante un servidor de lenguaje quedan como líneas opcionales. No se necesitan para cerrar el producto Terraform/AWS definido aquí.
 

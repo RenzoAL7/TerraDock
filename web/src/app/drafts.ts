@@ -1,5 +1,6 @@
-import type { Draft, Project, Resource, Property } from "../lib/types";
+import type { Draft, Project, Resource } from "../lib/types";
 import {
+  propertyInputValue,
   propertyKey,
   type PropertyDraft,
 } from "../features/inspector/Inspector";
@@ -30,42 +31,51 @@ export function afterFileSave(
   return next;
 }
 
-export function afterPropertySave(
+/**
+ * Inspector text is only kept while it differs from what the live view shows.
+ * Once the code draft reflects it (or the field disappears), it is dropped.
+ */
+export function settledProperties(
   current: Record<string, PropertyDraft>,
-  resource: Resource,
-  property: Property,
-  captured: PropertyDraft,
-  before: Project,
-  saved: Project,
+  resources: Resource[],
+  projectId: string,
 ): Record<string, PropertyDraft> {
-  const next = { ...current },
-    key = propertyKey(resource, property);
-  if (next[key] === captured) delete next[key];
-  const file = saved.files.find((f) => f.path === resource.file);
-  if (!file || saved.id !== captured.projectId) return next;
-  for (const [draftKey, draft] of Object.entries(next)) {
+  let changed = false;
+  const next: Record<string, PropertyDraft> = {};
+  for (const [key, draft] of Object.entries(current)) {
+    const match = resources
+      .flatMap((r) => r.properties.map((p) => [r, p] as const))
+      .find(([r, p]) => p.editable && propertyKey(r, p) === key);
     if (
-      draft.projectId !== captured.projectId ||
-      draft.revision !== captured.revision
-    )
+      draft.projectId !== projectId ||
+      !match ||
+      propertyInputValue(match[1]) === draft.text
+    ) {
+      changed = true;
       continue;
-    const target = before.resources.find(
-      (r) =>
-        r.file === resource.file &&
-        r.properties.some((p) => propertyKey(r, p) === draftKey),
-    );
-    const original = target?.properties.find(
-      (p) => propertyKey(target, p) === draftKey,
-    );
-    const updated = saved.resources
-      .find((r) => r.id === target?.id)
-      ?.properties.find((p) => p.name === original?.name);
-    if (
-      original &&
-      updated &&
-      (draftKey === key || original.expression === updated.expression)
-    )
-      next[draftKey] = { ...draft, revision: file.revision };
+    }
+    next[key] = draft;
   }
+  return changed ? next : current;
+}
+
+/** Store new editor/inspector content as a draft, or drop it if it matches disk. */
+export function withDraft(
+  current: Record<string, Draft>,
+  path: string,
+  content: string,
+  saved: { content: string; revision: string },
+  projectId: string,
+): Record<string, Draft> {
+  const next = { ...current };
+  if (content === saved.content) {
+    delete next[path];
+    return next;
+  }
+  next[path] = {
+    content,
+    baseRevision: current[path]?.baseRevision ?? saved.revision,
+    projectId: current[path]?.projectId ?? projectId,
+  };
   return next;
 }

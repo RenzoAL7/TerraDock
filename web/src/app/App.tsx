@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -16,13 +23,19 @@ import {
   Menu,
   Network,
   PanelLeftClose,
+  RadioTower,
+  Rocket,
   Search,
   ShieldCheck,
   TriangleAlert,
   X,
 } from "lucide-react";
 import { useWorkspace } from "./useWorkspace";
-import { afterFileSave, afterPropertySave } from "./drafts";
+import { afterFileSave, settledProperties, withDraft } from "./drafts";
+import { useLivePreview } from "./useLivePreview";
+import { blockEnd, resourceAtLine } from "./blocks";
+import { DeployPanel } from "../features/deploy/DeployPanel";
+import { deployMarks, useFloci } from "../features/deploy/useFloci";
 import {
   ArchitectureCanvas,
   ResourceIcon,
@@ -35,11 +48,20 @@ import {
 } from "../features/inspector/Inspector";
 import { FolderPicker } from "../features/project/FolderPicker";
 import { Dialog } from "../components/Dialog";
-import { api, errorMessage } from "../lib/api";
+import { api, errorMessage, liveApi } from "../lib/api";
 import type { Draft, Project, Property, Resource } from "../lib/types";
 
 const CodeEditor = lazy(() => import("../features/editor/CodeEditor"));
-type View = "architecture" | "code" | "split" | "analysis";
+type View = "architecture" | "code" | "split" | "analysis" | "deploy";
+const AUTOSAVE_KEY = "terradock.autosave";
+const AUTOSAVE_DELAY = 600;
+function readAutosave() {
+  try {
+    return localStorage.getItem(AUTOSAVE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
   delete next[key];
@@ -77,9 +99,138 @@ export default function App() {
     {},
   );
   const [pending, setPending] = useState<(() => void) | null>(null);
+  const [autosave, setAutosave] = useState(readAutosave);
   const searchRef = useRef<HTMLInputElement>(null);
   const hasUnsaved =
     Object.keys(drafts).length > 0 || Object.keys(properties).length > 0;
+  // Saved files + unsaved drafts, re-analyzed as you type.
+  const live = useLivePreview(project, drafts);
+  const floci = useFloci(project?.id);
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const applyQueue = useRef(Promise.resolve(""));
+  const savingRef = useRef(false);
+
+  const saveDraft = useCallback(
+    async (path: string) => {
+      const current = projectRef.current;
+      const captured = draftsRef.current[path];
+      const file = current?.files.find((f) => f.path === path);
+      if (!current || !captured || !file || savingRef.current) return;
+      if (
+        captured.projectId !== current.id ||
+        captured.baseRevision !== file.revision
+      )
+        return;
+      savingRef.current = true;
+      try {
+        const next = await perform(() =>
+          api.save(
+            captured.projectId,
+            path,
+            captured.content,
+            captured.baseRevision,
+          ),
+        );
+        if (next)
+          setDrafts((latest) => afterFileSave(latest, path, captured, next));
+      } finally {
+        savingRef.current = false;
+      }
+    },
+    [perform],
+  );
+
+  // Graph → code: apply an inspector value to the file draft immediately.
+  const applyProperty = useCallback(
+    (target: Resource, property: Property, text: string) => {
+      const job = applyQueue.current.then(async () => {
+        const current = projectRef.current;
+        const file = current?.files.find((f) => f.path === target.file);
+        if (!current || !file) return "El archivo ya no está disponible.";
+        let value: string | number | boolean;
+        try {
+          value = parsePropertyInput(property, text);
+        } catch (reason) {
+          return errorMessage(reason);
+        }
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const base = draftsRef.current[file.path];
+          const content =
+            base?.projectId === current.id ? base.content : file.content;
+          try {
+            const result = await liveApi.editDraft(
+              current.id,
+              file.path,
+              content,
+              target.id,
+              property.name,
+              value,
+            );
+            const latest = draftsRef.current[file.path];
+            const latestContent =
+              latest?.projectId === current.id ? latest.content : file.content;
+            // Typing in the editor during the request: retry on fresh text.
+            if (latestContent !== content) continue;
+            const next = withDraft(
+              draftsRef.current,
+              file.path,
+              result.content,
+              file,
+              current.id,
+            );
+            draftsRef.current = next;
+            setDrafts(next);
+            return "";
+          } catch (reason) {
+            return errorMessage(reason);
+          }
+        }
+        return "El código cambió mientras se aplicaba. Vuelve a intentarlo.";
+      });
+      applyQueue.current = job.catch(() => "");
+      return job;
+    },
+    [],
+  );
+
+  // Inspector text is dropped once the live view reflects it.
+  useEffect(() => {
+    if (!project || !live || live.pending) return;
+    setProperties((current) =>
+      settledProperties(current, live.resources, project.id),
+    );
+  }, [project, live]);
+
+  // Code → disk: autosave valid drafts shortly after typing stops.
+  const autosaveTarget =
+    autosave && project && live && live.live && live.valid && !live.pending
+      ? Object.entries(drafts).find(
+          ([path, d]) =>
+            d.projectId === project.id &&
+            project.files.find((f) => f.path === path)?.revision ===
+              d.baseRevision,
+        )?.[0]
+      : undefined;
+  useEffect(() => {
+    if (!autosaveTarget || busy || !connected) return;
+    const timer = window.setTimeout(
+      () => void saveDraft(autosaveTarget),
+      AUTOSAVE_DELAY,
+    );
+    return () => clearTimeout(timer);
+  }, [autosaveTarget, drafts, busy, connected, saveDraft]);
+  const toggleAutosave = () =>
+    setAutosave((current) => {
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, current ? "off" : "on");
+      } catch {
+        /* preference is optional */
+      }
+      return !current;
+    });
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => {
       if (hasUnsaved) e.preventDefault();
@@ -99,7 +250,7 @@ export default function App() {
     };
   }, [hasUnsaved]);
 
-  if (!project || !session)
+  if (!project || !session || !live)
     return (
       <div className="startup">
         <div className="brand-mark">
@@ -117,7 +268,7 @@ export default function App() {
         )}
       </div>
     );
-  const resource = project.resources.find((r) => r.id === selected);
+  const resource = live.resources.find((r) => r.id === selected);
   const file =
     project.files.find((f) => f.path === filePath) ?? project.files[0];
   const draft = file && drafts[file.path];
@@ -131,14 +282,44 @@ export default function App() {
   const staleProperties = Object.entries(properties).some(
     ([key, p]) =>
       p.projectId !== project.id ||
-      !project.resources.some((r) =>
+      !live.resources.some((r) =>
         r.properties.some(
           (prop) => prop.editable && propertyKey(r, prop) === key,
         ),
       ),
   );
-  const issues = project.diagnostics.length + project.findings.length;
-  const visibleResources = project.resources.filter((r) =>
+  const issues = live.diagnostics.length + live.findings.length;
+  const marks = deployMarks(floci.status, project.id);
+  const editorContent = file ? (draft?.content ?? file.content) : "";
+  const linked =
+    resource && file && resource.file === file.path
+      ? { start: resource.line, end: blockEnd(editorContent, resource.line) }
+      : null;
+  const conflictCount = Object.entries(drafts).filter(([path, d]) => {
+    const f = project.files.find((x) => x.path === path);
+    return f && d.projectId === project.id && d.baseRevision !== f.revision;
+  }).length;
+  const syncNote = conflictCount
+    ? "Conflicto: el archivo cambió fuera de TerraDock."
+    : !live.valid && live.live
+      ? "HCL con errores: el diagrama espera una versión válida."
+      : live.pending
+        ? "Actualizando diagrama…"
+        : hasUnsaved
+          ? autosave
+            ? "Cambios en vivo · se guardan automáticamente"
+            : "Cambios en vivo · ⌘/Ctrl + S para guardar"
+          : "Sincronizado con el archivo";
+  const selectResource = (id: string) => {
+    setSelected(id);
+    const target = live.resources.find((r) => r.id === id);
+    // Graph → code: in split view, follow the selected node in the editor.
+    if (target && view === "split") {
+      setFilePath(target.file);
+      setLine(target.line);
+    }
+  };
+  const visibleResources = live.resources.filter((r) =>
     `${r.id} ${r.label} ${r.file}`.toLowerCase().includes(query.toLowerCase()),
   );
   const code = (path: string, targetLine = 1) => {
@@ -173,44 +354,8 @@ export default function App() {
       setExamples(false);
     }
   };
-  const saveFile = async () => {
-    if (!file || !draft || busy || conflict) return;
-    const path = file.path,
-      captured = draft;
-    const next = await perform(() =>
-      api.save(
-        captured.projectId,
-        path,
-        captured.content,
-        captured.baseRevision,
-      ),
-    );
-    if (next)
-      setDrafts((current) => afterFileSave(current, path, captured, next));
-  };
-  const saveProperty = async (
-    target: Resource,
-    property: Property,
-    captured: PropertyDraft,
-  ) => {
-    try {
-      const value = parsePropertyInput(property, captured.text);
-      const next = await perform(() =>
-        api.property(
-          captured.projectId,
-          target.id,
-          property.name,
-          value,
-          captured.revision,
-        ),
-      );
-      if (next)
-        setProperties((current) =>
-          afterPropertySave(current, target, property, captured, project, next),
-        );
-    } catch (reason) {
-      setError(errorMessage(reason));
-    }
+  const saveFile = () => {
+    if (file && draft && !conflict) void saveDraft(file.path);
   };
   const editor = (
     <div className="editor-pane">
@@ -233,8 +378,15 @@ export default function App() {
       {file ? (
         <>
           <div className="editor-toolbar">
-            <span>
-              {draft ? "Borrador sin guardar" : "Archivo sincronizado"}
+            <span className="sync-state">
+              <RadioTower size={11} />
+              {draft
+                ? autosave && !conflict
+                  ? live.valid
+                    ? "En vivo · guardando automáticamente"
+                    : "En vivo · autoguardado en pausa (HCL con errores)"
+                  : "En vivo · sin guardar"
+                : "Archivo sincronizado"}
             </span>
             <div>
               <button
@@ -255,10 +407,18 @@ export default function App() {
                   Descartar borrador
                 </button>
               )}
+              <label className="autosave-toggle">
+                <input
+                  type="checkbox"
+                  checked={autosave}
+                  onChange={toggleAutosave}
+                />
+                Autoguardado
+              </label>
               <button
                 className="save-file"
                 disabled={!draft || busy || !!conflict}
-                onClick={() => void saveFile()}
+                onClick={saveFile}
               >
                 <Check size={14} />
                 Guardar archivo
@@ -279,29 +439,35 @@ export default function App() {
               <CodeEditor
                 key={`${project.id}:${file.path}`}
                 path={`${project.id}/${file.path}`}
-                value={draft?.content ?? file.content}
+                value={editorContent}
                 line={line}
-                diagnostics={project.diagnostics.map((d) => ({
+                highlight={linked}
+                diagnostics={live.diagnostics.map((d) => ({
                   ...d,
                   file: `${project.id}/${d.file}`,
                 }))}
-                onSave={() => void saveFile()}
-                onChange={(content) =>
-                  setDrafts((current) =>
-                    content === file.content
-                      ? without(current, file.path)
-                      : {
-                          ...current,
-                          [file.path]: {
-                            content,
-                            baseRevision:
-                              current[file.path]?.baseRevision ?? file.revision,
-                            projectId:
-                              current[file.path]?.projectId ?? project.id,
-                          },
-                        },
-                  )
-                }
+                onSave={saveFile}
+                onCursor={(cursor) => {
+                  // Code → graph: the caret selects the resource it is in.
+                  const target = resourceAtLine(
+                    live.resources,
+                    file.path,
+                    editorContent,
+                    cursor,
+                  );
+                  if (target && target.id !== selected) setSelected(target.id);
+                }}
+                onChange={(content) => {
+                  const next = withDraft(
+                    draftsRef.current,
+                    file.path,
+                    content,
+                    file,
+                    project.id,
+                  );
+                  draftsRef.current = next;
+                  setDrafts(next);
+                }}
               />
             </Suspense>
           </div>
@@ -380,6 +546,7 @@ export default function App() {
               { id: "code", label: "Código", icon: Code2 },
               { id: "split", label: "Dividir vista", icon: LayoutPanelLeft },
               { id: "analysis", label: "Análisis", icon: ShieldCheck },
+              { id: "deploy", label: "Floci", icon: Rocket },
             ] as const
           ).map((v) => (
             <button
@@ -439,13 +606,13 @@ export default function App() {
         </div>
       )}
       <div
-        className={`workspace ${sidebar ? "" : "sidebar-hidden"} ${resource && view !== "code" && view !== "analysis" ? "with-inspector" : ""}`}
+        className={`workspace ${sidebar ? "" : "sidebar-hidden"} ${resource && (view === "architecture" || view === "split") ? "with-inspector" : ""}`}
       >
         {sidebar && (
           <aside className="explorer">
             <div className="panel-heading">
               <span>EXPLORADOR</span>
-              <span className="count-badge">{project.resources.length}</span>
+              <span className="count-badge">{live.resources.length}</span>
             </div>
             <div className="search-field">
               <Search size={15} />
@@ -474,8 +641,12 @@ export default function App() {
                   className={`explorer-resource ${selected === r.id ? "active" : ""}`}
                   title={r.id}
                   onClick={() => {
-                    setSelected(r.id);
-                    if (view === "code" || view === "analysis")
+                    selectResource(r.id);
+                    if (
+                      view === "code" ||
+                      view === "analysis" ||
+                      view === "deploy"
+                    )
                       setView("architecture");
                   }}
                 >
@@ -517,7 +688,7 @@ export default function App() {
           </aside>
         )}
         <main className={`main-panel view-${view}`}>
-          {view !== "code" && (
+          {view !== "code" && view !== "deploy" && (
             <div className="canvas-heading">
               <div>
                 <span className="eyebrow">
@@ -538,19 +709,28 @@ export default function App() {
                     : "Explora las conexiones. Selecciona un recurso para ver sus propiedades."}
                 </p>
               </div>
-              <span
-                className={`syntax-status ${project.valid ? "" : "invalid"}`}
-              >
-                {project.valid ? (
-                  <Check size={14} />
-                ) : (
-                  <TriangleAlert size={14} />
+              <span className="heading-badges">
+                {live.live && (
+                  <span
+                    className={`live-badge ${live.pending ? "pending" : ""}`}
+                  >
+                    <RadioTower size={13} /> En vivo
+                  </span>
                 )}
-                {project.valid ? "HCL válido" : "Revisar HCL"}
+                <span
+                  className={`syntax-status ${live.valid ? "" : "invalid"}`}
+                >
+                  {live.valid ? (
+                    <Check size={14} />
+                  ) : (
+                    <TriangleAlert size={14} />
+                  )}
+                  {live.valid ? "HCL válido" : "Revisar HCL"}
+                </span>
               </span>
             </div>
           )}
-          {!project.valid && view !== "analysis" && (
+          {!live.valid && view !== "analysis" && view !== "deploy" && (
             <button
               className="syntax-banner"
               onClick={() => setView("analysis")}
@@ -564,38 +744,50 @@ export default function App() {
           >
             {(view === "architecture" || view === "split") && (
               <ArchitectureCanvas
-                resources={project.resources}
-                edges={project.edges}
+                resources={live.resources}
+                edges={live.edges}
                 selected={selected}
                 query={query}
-                onSelect={setSelected}
+                onSelect={selectResource}
                 resetKey={`${project.id}:${view}`}
+                marks={marks}
               />
             )}
             {(view === "code" || view === "split") && editor}
+            {view === "deploy" && (
+              <DeployPanel
+                status={floci.status}
+                available={floci.available}
+                error={floci.error}
+                running={floci.running}
+                hasUnsaved={hasUnsaved}
+                resourceCount={project.resources.length}
+                onRun={(action, variables) => void floci.run(action, variables)}
+                onCancel={() => void floci.cancel()}
+              />
+            )}
             {view === "analysis" && (
               <div className="analysis-content">
                 <div className="analysis-summary">
                   <div>
-                    <span>{project.resources.length}</span>
+                    <span>{live.resources.length}</span>
                     <p>Recursos declarados</p>
                   </div>
                   <div>
-                    <span>{project.edges.length}</span>
+                    <span>{live.edges.length}</span>
                     <p>Referencias detectadas</p>
                   </div>
                   <div>
                     <span>
                       {
-                        project.diagnostics.filter(
-                          (d) => d.severity === "error",
-                        ).length
+                        live.diagnostics.filter((d) => d.severity === "error")
+                          .length
                       }
                     </span>
                     <p>Errores de sintaxis</p>
                   </div>
                   <div>
-                    <span>{project.findings.length}</span>
+                    <span>{live.findings.length}</span>
                     <p>Hallazgos estáticos</p>
                   </div>
                 </div>
@@ -604,7 +796,7 @@ export default function App() {
                   reglas SSH literales. Esto no verifica el estado desplegado ni
                   reemplaza una auditoría de seguridad.
                 </p>
-                {project.diagnostics.map((d, i) => (
+                {live.diagnostics.map((d, i) => (
                   <article
                     className={`finding ${d.severity}`}
                     key={`${d.file}:${i}`}
@@ -627,7 +819,7 @@ export default function App() {
                     </div>
                   </article>
                 ))}
-                {project.findings.map((f) => (
+                {live.findings.map((f) => (
                   <article className="finding warning" key={f.id}>
                     <ShieldCheck size={22} />
                     <div>
@@ -666,17 +858,18 @@ export default function App() {
           <Inspector
             resource={resource}
             project={project}
+            resources={live.resources}
+            valid={live.valid}
             drafts={properties}
-            fileDirty={!!drafts[resource.file]}
-            busy={busy}
+            syncNote={syncNote}
             onDraft={(key, next) =>
               setProperties((current) =>
                 next ? { ...current, [key]: next } : without(current, key),
               )
             }
-            onSave={saveProperty}
+            onApply={applyProperty}
             onCode={code}
-            onSelect={setSelected}
+            onSelect={selectResource}
             onClose={() => setSelected("")}
           />
         )}
@@ -691,10 +884,11 @@ export default function App() {
           {project.mode === "demo" ? "Ejemplo editable" : "Archivos locales"}
         </span>
         <span className="status-spacer" />
-        <span>
-          {hasUnsaved ? "Cambios sin guardar" : "Sin cambios pendientes"}
+        <span className="live-status" data-testid="sync-status">
+          <RadioTower size={11} />
+          {syncNote}
         </span>
-        <span>{project.resources.length} recursos</span>
+        <span>{live.resources.length} recursos</span>
         <span>{project.files.length} archivos</span>
         <span className="hcl-status">
           HCL <Activity size={12} />
@@ -780,8 +974,15 @@ export default function App() {
                 compatibles. Las expresiones se conservan en el editor.
               </li>
               <li>
-                <strong>Guarda el código</strong> con el botón o ⌘/Ctrl + S. Los
-                cambios externos se detectan automáticamente.
+                <strong>Edita en cualquier lado</strong>: lo que escribes en el
+                código se ve al instante en el diagrama y lo que cambias en el
+                inspector aparece en el código. Con el autoguardado activo, los
+                cambios válidos llegan al archivo; los cambios externos se
+                detectan al momento.
+              </li>
+              <li>
+                <strong>Despliega en Floci</strong> desde la pestaña Floci:
+                plan, aplicar y destruir contra el emulador local.
               </li>
             </ol>
             <p>

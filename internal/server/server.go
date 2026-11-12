@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RenzoAL7/TerraDock/internal/floci"
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
 )
 
@@ -28,11 +29,16 @@ type Server struct {
 	token     string
 	assets    string
 	devOrigin string
+	floci     *floci.Runner
 }
 
 // Options permits one exact loopback origin for Vite's development proxy.
 // This never enables CORS: production assets and API share one origin.
-type Options struct{ DevOrigin string }
+type Options struct {
+	DevOrigin string
+	// Floci is optional; without it the deployment endpoints report unavailable.
+	Floci *floci.Runner
+}
 
 func New(manager *workspace.Manager, assets string, options ...Options) (*Server, error) {
 	if manager == nil {
@@ -42,8 +48,10 @@ func New(manager *workspace.Manager, assets string, options ...Options) (*Server
 		return nil, fmt.Errorf("only one server options value is allowed")
 	}
 	devOrigin := ""
+	var runner *floci.Runner
 	if len(options) == 1 {
 		devOrigin = options[0].DevOrigin
+		runner = options[0].Floci
 	}
 	if devOrigin != "" {
 		u, err := url.Parse(devOrigin)
@@ -55,7 +63,7 @@ func New(manager *workspace.Manager, assets string, options ...Options) (*Server
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	return &Server{workspace: manager, token: hex.EncodeToString(b), assets: assets, devOrigin: devOrigin}, nil
+	return &Server{workspace: manager, token: hex.EncodeToString(b), assets: assets, devOrigin: devOrigin, floci: runner}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -67,6 +75,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/open", s.open)
 	mux.HandleFunc("PUT /api/files", s.save)
 	mux.HandleFunc("PATCH /api/properties", s.property)
+	mux.HandleFunc("POST /api/analyze", s.analyze)
+	mux.HandleFunc("POST /api/edit-draft", s.editDraft)
+	mux.HandleFunc("GET /api/floci", s.flociStatus)
+	mux.HandleFunc("POST /api/floci/run", s.flociRun)
+	mux.HandleFunc("POST /api/floci/cancel", s.flociCancel)
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "not_found", "La ruta de API no existe.")
@@ -216,6 +229,89 @@ func (s *Server) property(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, snapshot)
+}
+
+// analyze is read-only: it previews unsaved editor content for the live diagram.
+func (s *Server) analyze(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID string            `json:"projectId"`
+		Files     map[string]string `json:"files"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	preview, err := s.workspace.Analyze(request.ProjectID, request.Files)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, preview)
+}
+
+// editDraft applies a visual property change to unsaved content without writing.
+func (s *Server) editDraft(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID  string `json:"projectId"`
+		Path       string `json:"path"`
+		Content    string `json:"content"`
+		ResourceID string `json:"resourceId"`
+		Property   string `json:"property"`
+		Value      any    `json:"value"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	content, err := s.workspace.EditDraft(request.ProjectID, request.Path, request.Content, request.ResourceID, request.Property, request.Value)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"content": content})
+}
+
+func (s *Server) flociStatus(w http.ResponseWriter, r *http.Request) {
+	if s.floci == nil {
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		return
+	}
+	respond(w, http.StatusOK, s.floci.Status(r.Context()))
+}
+
+func (s *Server) flociRun(w http.ResponseWriter, r *http.Request) {
+	if s.floci == nil {
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		return
+	}
+	var request struct {
+		Action    string            `json:"action"`
+		ProjectID string            `json:"projectId"`
+		Variables map[string]string `json:"variables"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	job, err := s.floci.Start(request.Action, request.ProjectID, request.Variables)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, floci.ErrBusy) {
+			status = http.StatusConflict
+		}
+		fail(w, status, "floci_error", err.Error())
+		return
+	}
+	respond(w, http.StatusAccepted, job)
+}
+
+func (s *Server) flociCancel(w http.ResponseWriter, r *http.Request) {
+	if s.floci == nil {
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		return
+	}
+	var request struct{}
+	if !decode(w, r, &request) {
+		return
+	}
+	respond(w, http.StatusOK, map[string]bool{"canceled": s.floci.Cancel()})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, value any) bool {

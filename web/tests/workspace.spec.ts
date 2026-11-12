@@ -103,9 +103,20 @@ async function replaceEditorContent(page: Page, content: string) {
   await editor.press("ControlOrMeta+V");
 }
 
+async function setAutosave(page: Page, enabled: boolean) {
+  await page.addInitScript(
+    (value) => {
+      localStorage.setItem("terradock.autosave", value);
+    },
+    enabled ? "on" : "off",
+  );
+}
+
 test.beforeEach(async ({ request, page }) => {
   createdDirectories = [];
   browserErrors = [];
+  // Manual-save scenarios below; live autosave has its own tests.
+  await setAutosave(page, false);
   page.on("pageerror", (error) => browserErrors.push(error.message));
   const response = await request.get("/api/session");
   expect(response.ok()).toBeTruthy();
@@ -175,7 +186,7 @@ test("permite explorar la arquitectura y abrir ayuda en una pantalla estrecha", 
   await expect(dialog).not.toBeVisible();
 });
 
-test("guardar una propiedad actualiza el modelo, el diagrama y el código original", async ({
+test("una propiedad se refleja al instante en el diagrama y el código, y se guarda en el archivo", async ({
   page,
   request,
 }) => {
@@ -186,18 +197,54 @@ test("guardar una propiedad actualiza el modelo, el diagrama y el código origin
   )!.content;
   await page.getByTestId("resource-aws_instance.app_a").click();
   await page.getByLabel("instance_type").fill("t3.medium");
-  await page
-    .getByRole("button", { name: "Guardar propiedad", exact: true })
-    .click();
+  // Graph → code, live: no save needed to see it everywhere.
   await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
     "t3.medium",
   );
-  const after = await project(request);
-  expect(after.files.find((file) => file.path === "main.tf")!.content).toBe(
-    original.replace('"t3.small"', '"t3.medium"'),
-  );
+  await expect(page.getByTestId("sync-status")).toContainText("en vivo");
+  expect(
+    (await project(request)).files.find((file) => file.path === "main.tf")!
+      .content,
+  ).toBe(original);
   await openInstanceCode(page);
   await expect(page.locator(".view-lines")).toContainText("t3.medium");
+  await page
+    .getByRole("button", { name: "Guardar archivo", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (await project(request)).files.find((file) => file.path === "main.tf")!
+          .content,
+    )
+    .toBe(original.replace('"t3.small"', '"t3.medium"'));
+});
+
+test("escribir en el código actualiza el diagrama en vivo sin guardar", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const before = await project(request);
+  const original = before.files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  await openInstanceCode(page);
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  await replaceEditorContent(
+    page,
+    original.replace('"t3.small"', '"t3.xlarge"'),
+  );
+  await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
+    "t3.xlarge",
+  );
+  await expect(page.getByLabel("instance_type")).toHaveValue("t3.xlarge");
+  expect(
+    (await project(request)).files.find((file) => file.path === "main.tf")!
+      .content,
+  ).toBe(original);
 });
 
 test("guardar código actualiza las propiedades y la arquitectura", async ({
@@ -275,17 +322,15 @@ test("un error de sintaxis conserva el gráfico anterior y muestra los diagnóst
   ).toBeVisible();
 });
 
-test("abre una carpeta real, escribe una propiedad y observa cambios externos", async ({
+test("con autoguardado, una propiedad llega al archivo real y los cambios externos al diagrama", async ({
   page,
 }) => {
+  await setAutosave(page, true);
   await page.goto("/");
   const directory = await openLocalFolder(page);
   const file = join(directory, "main.tf");
   await page.getByTestId("resource-aws_instance.web").click();
   await page.getByLabel("instance_type").fill("t3.small");
-  await page
-    .getByRole("button", { name: "Guardar propiedad", exact: true })
-    .click();
   await expect
     .poll(() => readFile(file, "utf8"))
     .toBe(localSource.replace('"t3.micro"', '"t3.small"'));
@@ -426,4 +471,40 @@ test("conserva lo escrito mientras llega la respuesta de un guardado anterior", 
     if (intercepted) await routeFinished;
     await page.unroute("**/api/files");
   }
+});
+
+test("el autoguardado espera a que el HCL sea válido", async ({
+  page,
+  request,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource + 'resource "aws_s3_bucket" {\n',
+  );
+  await expect(page.getByText(/autoguardado en pausa/)).toBeVisible();
+  await page.waitForTimeout(1200);
+  expect(await readFile(file, "utf8")).toBe(localSource);
+  const fixed = localSource.replace('"t3.micro"', '"t3.nano"');
+  await replaceEditorContent(page, fixed);
+  await expect.poll(() => readFile(file, "utf8")).toBe(fixed);
+  expect((await project(request)).valid).toBe(true);
+});
+
+test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await expect(page.getByText("Estado en Floci")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Generar plan", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Aplicar plan", exact: true }),
+  ).toBeDisabled();
 });

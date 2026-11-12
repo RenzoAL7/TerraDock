@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RenzoAL7/TerraDock/internal/floci"
 	"github.com/RenzoAL7/TerraDock/internal/server"
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
 )
@@ -29,6 +30,8 @@ func run() error {
 	root := flag.String("root", ".", "Allowed root directory for local projects")
 	assets := flag.String("assets", "web/dist", "Directory containing built frontend assets")
 	devOrigin := flag.String("dev-origin", "", "Exact HTTP loopback origin allowed for the Vite development proxy")
+	flociEndpoint := flag.String("floci-endpoint", floci.DefaultEndpoint, "Local Floci endpoint used for plan/apply (loopback or *.floci.io)")
+	terraformBin := flag.String("terraform", "", "Terraform or OpenTofu binary (default: lookup in PATH)")
 	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 	if *version {
@@ -47,7 +50,15 @@ func run() error {
 		return err
 	}
 	defer manager.Close()
-	app, err := server.New(manager, absAssets, server.Options{DevOrigin: *devOrigin})
+	runner, err := floci.New(floci.Config{Endpoint: *flociEndpoint, Terraform: *terraformBin}, func() floci.Project {
+		snapshot, files := manager.Files()
+		return floci.Project{ID: snapshot.ID, Name: snapshot.Name, Dir: snapshot.Path, Files: files}
+	})
+	if err != nil {
+		return err
+	}
+	defer runner.Close()
+	app, err := server.New(manager, absAssets, server.Options{DevOrigin: *devOrigin, Floci: runner})
 	if err != nil {
 		return err
 	}

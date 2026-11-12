@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
+
 	"github.com/RenzoAL7/TerraDock/examples"
 	"github.com/RenzoAL7/TerraDock/internal/terraform"
 )
@@ -42,6 +44,7 @@ type Manager struct {
 	fingerprint string
 	generation  uint64
 	subscribers map[chan Snapshot]struct{}
+	rewatch     chan struct{}
 	stop        chan struct{}
 	done        chan struct{}
 	once        sync.Once
@@ -64,7 +67,7 @@ func New(root string) (*Manager, error) {
 	if _, err := rand.Read(instanceBytes); err != nil {
 		return nil, fmt.Errorf("create instance ID: %w", err)
 	}
-	m := &Manager{root: canonical, instanceID: hex.EncodeToString(instanceBytes), subscribers: make(map[chan Snapshot]struct{}), stop: make(chan struct{}), done: make(chan struct{})}
+	m := &Manager{root: canonical, instanceID: hex.EncodeToString(instanceBytes), subscribers: make(map[chan Snapshot]struct{}), rewatch: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{})}
 	if _, err := m.Demo("web-app"); err != nil {
 		return nil, err
 	}
@@ -91,6 +94,7 @@ func (m *Manager) Demo(template string) (Snapshot, error) {
 	defer m.mu.Unlock()
 	m.current = Snapshot{ID: "demo-" + template, Name: template, Mode: "demo", Path: ""}
 	m.apply(files, false)
+	m.signalRewatch()
 	return m.current, nil
 }
 
@@ -110,6 +114,7 @@ func (m *Manager) Open(path string) (Snapshot, error) {
 	defer m.mu.Unlock()
 	m.current = Snapshot{ID: "local-" + revision(safe)[:16], Name: filepath.Base(safe), Mode: "local", Path: safe}
 	m.apply(files, false)
+	m.signalRewatch()
 	return m.current, nil
 }
 
@@ -261,18 +266,173 @@ func (m *Manager) refreshLocked() {
 	}
 }
 
+// Tuning for the file watcher. Native events give near-instant updates; the
+// poll is a safety net for filesystems that drop or never deliver events.
+const (
+	eventDebounce     = 25 * time.Millisecond
+	pollWithEvents    = 2 * time.Second
+	pollWithoutEvents = 300 * time.Millisecond
+)
+
+func (m *Manager) signalRewatch() {
+	select {
+	case m.rewatch <- struct{}{}:
+	default:
+	}
+}
+
 func (m *Manager) watch() {
 	defer close(m.done)
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	watcher, err := fsnotify.NewWatcher()
+	var events <-chan fsnotify.Event
+	var watchErrors <-chan error
+	interval := pollWithoutEvents
+	if err == nil {
+		defer watcher.Close()
+		events, watchErrors = watcher.Events, watcher.Errors
+		interval = pollWithEvents
+	}
+	poll := time.NewTicker(interval)
+	defer poll.Stop()
+	watched := ""
+	follow := func() {
+		if watcher == nil {
+			return
+		}
+		m.mu.Lock()
+		target := ""
+		if m.current.Mode == "local" {
+			target = m.current.Path
+		}
+		m.mu.Unlock()
+		if target == watched {
+			return
+		}
+		if watched != "" {
+			_ = watcher.Remove(watched)
+		}
+		watched = ""
+		if target != "" && watcher.Add(target) == nil {
+			watched = target
+		}
+	}
+	refresh := func() {
+		m.mu.Lock()
+		m.refreshLocked()
+		m.mu.Unlock()
+	}
+	var debounce <-chan time.Time
+	follow()
 	for {
 		select {
 		case <-m.stop:
 			return
-		case <-ticker.C:
-			m.mu.Lock()
-			m.refreshLocked()
-			m.mu.Unlock()
+		case <-m.rewatch:
+			follow()
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				poll.Reset(pollWithoutEvents)
+				continue
+			}
+			// Editors often save through temp files and renames; any .tf
+			// entry change (or the directory itself) triggers a re-read.
+			if strings.HasSuffix(event.Name, ".tf") || event.Name == watched {
+				if debounce == nil {
+					debounce = time.After(eventDebounce)
+				}
+			}
+		case _, ok := <-watchErrors:
+			if !ok {
+				watchErrors = nil
+			}
+		case <-debounce:
+			debounce = nil
+			refresh()
+		case <-poll.C:
+			follow()
+			refresh()
 		}
 	}
+}
+
+// Preview is the analysis of unsaved editor content layered over the project.
+// It never mutates the workspace and is the basis of live diagram updates.
+type Preview struct {
+	ProjectID   string                 `json:"projectId"`
+	Revision    string                 `json:"revision"`
+	Resources   []terraform.Resource   `json:"resources"`
+	Edges       []terraform.Edge       `json:"edges"`
+	Diagnostics []terraform.Diagnostic `json:"diagnostics"`
+	Findings    []terraform.Finding    `json:"findings"`
+	Valid       bool                   `json:"valid"`
+}
+
+// Analyze parses the open project with the given file contents replacing the
+// stored ones. Only files that belong to the project can be overridden.
+func (m *Manager) Analyze(projectID string, overrides map[string]string) (Preview, error) {
+	m.mu.Lock()
+	if projectID == "" || projectID != m.current.ID {
+		m.mu.Unlock()
+		return Preview{}, problem("project_conflict", "El proyecto abierto cambió. Revisa el proyecto actual.")
+	}
+	files := make(map[string]string, len(m.files))
+	for name, body := range m.files {
+		files[name] = body
+	}
+	revision := m.current.Revision
+	m.mu.Unlock()
+	total := 0
+	for name, body := range overrides {
+		if _, ok := files[name]; !ok {
+			return Preview{}, problem("not_found", "El archivo no pertenece al proyecto abierto.")
+		}
+		if len(body) > MaxFileBytes {
+			return Preview{}, problem("too_large", "El archivo supera el límite de 2 MiB.")
+		}
+		files[name] = body
+	}
+	for _, body := range files {
+		total += len(body)
+	}
+	if total > MaxProjectBytes {
+		return Preview{}, problem("too_large", "El proyecto supera el límite de 20 MiB.")
+	}
+	analysis := terraform.Parse(files)
+	return Preview{ProjectID: projectID, Revision: revision, Resources: analysis.Resources, Edges: analysis.Edges, Diagnostics: analysis.Diagnostics, Findings: analysis.Findings, Valid: analysis.Valid}, nil
+}
+
+// EditDraft applies a visual literal edit to unsaved content and returns the
+// new text. Persisting it is a separate, revision-checked save.
+func (m *Manager) EditDraft(projectID, path, content, resourceID, property string, value any) (string, error) {
+	m.mu.Lock()
+	_, known := m.files[path]
+	current := m.current.ID
+	m.mu.Unlock()
+	if projectID == "" || projectID != current {
+		return "", problem("project_conflict", "El proyecto abierto cambió. Revisa el proyecto actual.")
+	}
+	if !known {
+		return "", problem("not_found", "El archivo no pertenece al proyecto abierto.")
+	}
+	if len(content) > MaxFileBytes {
+		return "", problem("too_large", "El archivo supera el límite de 2 MiB.")
+	}
+	updated, err := terraform.EditLiteral(content, path, resourceID, property, value)
+	if err != nil {
+		return "", problem("invalid_property", err.Error())
+	}
+	return updated, nil
+}
+
+// Files returns a copy of the saved project files and its identity, for tools
+// (such as the Floci runner) that must work on confirmed content only.
+func (m *Manager) Files() (Snapshot, map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	files := make(map[string]string, len(m.files))
+	for name, body := range m.files {
+		files[name] = body
+	}
+	return m.current, files
 }
