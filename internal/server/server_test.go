@@ -298,3 +298,36 @@ func TestHTTPRejectsSymlinkFilesMissingProjectAndOversizedContent(t *testing.T) 
 	}
 	assertStatus(t, api.request(t, "POST", "/api/open", `{"path":"."}`, nil), http.StatusForbidden)
 }
+
+func TestHTTPLivePreviewAndDraftEditNeverWrite(t *testing.T) {
+	api := setupAPI(t)
+	initial := projectFrom(t, api.request(t, "POST", "/api/open", bodyJSON(t, map[string]string{"path": api.root}), nil))
+	draft := testSource + "resource \"aws_subnet\" \"a\" {\n  vpc_id = aws_vpc.main.id\n  cidr_block = \"10.0.1.0/24\"\n}\n"
+	response := api.request(t, "POST", "/api/analyze", bodyJSON(t, map[string]any{"projectId": initial.ID, "files": map[string]string{"main.tf": draft}}), nil)
+	defer response.Body.Close()
+	var preview workspace.Preview
+	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&preview) != nil {
+		t.Fatalf("analyze failed: %d", response.StatusCode)
+	}
+	if len(preview.Resources) != 2 || len(preview.Edges) == 0 {
+		t.Fatalf("preview did not include draft resources: %+v", preview)
+	}
+	edit := api.request(t, "POST", "/api/edit-draft", bodyJSON(t, map[string]any{"projectId": initial.ID, "path": "main.tf", "content": draft, "resourceId": "aws_subnet.a", "property": "cidr_block", "value": "10.0.7.0/24"}), nil)
+	defer edit.Body.Close()
+	var edited struct{ Content string }
+	if edit.StatusCode != http.StatusOK || json.NewDecoder(edit.Body).Decode(&edited) != nil || !strings.Contains(edited.Content, "10.0.7.0/24") {
+		t.Fatal("edit-draft did not return updated content")
+	}
+	disk, _ := os.ReadFile(filepath.Join(api.root, "main.tf"))
+	if string(disk) != testSource {
+		t.Fatal("preview endpoints wrote to disk")
+	}
+	// Mutating previews still require the session token.
+	api.token = ""
+	assertStatus(t, api.request(t, "POST", "/api/analyze", bodyJSON(t, map[string]any{"projectId": initial.ID}), nil), http.StatusForbidden)
+}
+
+func TestHTTPFlociUnavailableWithoutRunner(t *testing.T) {
+	api := setupAPI(t)
+	assertStatus(t, api.request(t, "GET", "/api/floci", "", nil), http.StatusServiceUnavailable)
+}

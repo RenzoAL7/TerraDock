@@ -1,19 +1,20 @@
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Braces,
   FileCode2,
   LockKeyhole,
-  Save,
+  RadioTower,
   X,
 } from "lucide-react";
 import type { Project, Property, Resource } from "../../lib/types";
 import { ResourceIcon } from "../architecture/ArchitectureCanvas";
 import { shortType } from "../architecture/graph";
 
+/** Text typed in a field; it is applied to the code draft as you type. */
 export interface PropertyDraft {
   projectId: string;
   text: string;
-  revision: string;
 }
 export function propertyKey(resource: Resource, property: Property) {
   return `${resource.id}:${property.name}`;
@@ -40,33 +41,57 @@ export function parsePropertyInput(
 interface Props {
   resource: Resource;
   project: Project;
+  /** Resources as currently shown (saved files + drafts). */
+  resources: Resource[];
+  valid: boolean;
   drafts: Record<string, PropertyDraft>;
-  fileDirty: boolean;
-  busy: boolean;
+  syncNote: string;
   onDraft: (key: string, draft: PropertyDraft | null) => void;
-  onSave: (
+  /** Apply a value to the code draft; resolves to an error message or "". */
+  onApply: (
     resource: Resource,
     property: Property,
-    draft: PropertyDraft,
-  ) => Promise<void>;
+    text: string,
+  ) => Promise<string>;
   onCode: (file: string, line: number) => void;
   onSelect: (id: string) => void;
   onClose: () => void;
 }
 
+const APPLY_DELAY = 180;
+
 export function Inspector({
   resource,
   project,
+  resources,
+  valid,
   drafts,
-  fileDirty,
-  busy,
+  syncNote,
   onDraft,
-  onSave,
+  onApply,
   onCode,
   onSelect,
   onClose,
 }: Props) {
-  const source = project.files.find((file) => file.path === resource.file);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const timers = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const pending = timers.current;
+    return () => Object.values(pending).forEach((t) => clearTimeout(t));
+  }, []);
+  const schedule = (property: Property, key: string, text: string) => {
+    clearTimeout(timers.current[key]);
+    timers.current[key] = window.setTimeout(() => {
+      void onApply(resource, property, text).then((message) =>
+        setErrors((current) => {
+          const next = { ...current };
+          if (message) next[key] = message;
+          else delete next[key];
+          return next;
+        }),
+      );
+    }, APPLY_DELAY);
+  };
   const editable = resource.properties.filter((p) => p.editable);
   const readOnly = resource.properties.filter((p) => !p.editable);
   return (
@@ -109,13 +134,10 @@ export function Inspector({
           <h3>
             Propiedades <span>{resource.properties.length}</span>
           </h3>
-          {fileDirty && (
-            <p className="field-note">
-              Guarda o descarta el borrador de este archivo antes de cambiar sus
-              propiedades.
-            </p>
-          )}
-          {!project.valid && (
+          <p className="field-note live-note">
+            <RadioTower size={12} /> {syncNote}
+          </p>
+          {!valid && (
             <p className="field-note">
               Corrige los errores de sintaxis para editar propiedades. El
               gráfico muestra la última versión válida.
@@ -125,20 +147,14 @@ export function Inspector({
             const key = propertyKey(resource, property),
               draft = drafts[key];
             const value = draft?.text ?? propertyInputValue(property);
-            const update = (text: string) =>
-              onDraft(
-                key,
-                text === propertyInputValue(property)
-                  ? null
-                  : {
-                      text,
-                      projectId: draft?.projectId ?? project.id,
-                      revision: draft?.revision ?? source?.revision ?? "",
-                    },
-              );
+            const error = errors[key];
+            const update = (text: string) => {
+              onDraft(key, { text, projectId: project.id });
+              schedule(property, key, text);
+            };
             return (
               <div
-                className={`property-field ${draft ? "field-dirty" : ""}`}
+                className={`property-field ${draft ? "field-dirty" : ""} ${error ? "field-error" : ""}`}
                 key={key}
               >
                 <label htmlFor={key}>
@@ -148,6 +164,7 @@ export function Inspector({
                 {typeof property.value === "boolean" ? (
                   <select
                     id={key}
+                    disabled={!valid}
                     value={value}
                     onChange={(e) => update(e.target.value)}
                   >
@@ -158,6 +175,7 @@ export function Inspector({
                   <input
                     id={key}
                     value={value}
+                    disabled={!valid}
                     onChange={(e) => update(e.target.value)}
                     spellCheck={false}
                     inputMode={
@@ -165,19 +183,7 @@ export function Inspector({
                     }
                   />
                 )}
-                {draft && (
-                  <div className="field-actions">
-                    <button onClick={() => onDraft(key, null)}>
-                      Descartar
-                    </button>
-                    <button
-                      disabled={busy || fileDirty || !project.valid}
-                      onClick={() => void onSave(resource, property, draft)}
-                    >
-                      <Save size={12} /> Guardar propiedad
-                    </button>
-                  </div>
-                )}
+                {error && <p className="field-error-text">{error}</p>}
               </div>
             );
           })}
@@ -218,7 +224,7 @@ export function Inspector({
                 className="reference-item"
                 key={id}
                 onClick={() => onSelect(id)}
-                disabled={!project.resources.some((r) => r.id === id)}
+                disabled={!resources.some((r) => r.id === id)}
               >
                 <Braces size={14} />
                 <code>{id}</code>

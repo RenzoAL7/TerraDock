@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -29,6 +29,25 @@ import {
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
 import { buildGraph, shortType, type ResourceNode } from "./graph";
+import type { DeployMark } from "../deploy/useFloci";
+
+const markLabel: Record<DeployMark, string> = {
+  create: "+ crear",
+  update: "~ actualizar",
+  replace: "± reemplazar",
+  delete: "− eliminar",
+  deployed: "✓ en Floci",
+};
+function NodeMark({ mark }: { mark?: DeployMark }) {
+  return mark ? (
+    <span className={`deploy-mark mark-${mark}`} data-testid="deploy-mark">
+      {markLabel[mark]}
+    </span>
+  ) : null;
+}
+/** A stable signature of what a node shows, to flash nodes that changed. */
+const signature = (r: Resource) =>
+  JSON.stringify([r.label, r.parentId, r.properties, r.dependsOn]);
 
 export function ResourceIcon({
   resource,
@@ -61,7 +80,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
   );
   return (
     <div
-      className={`resource-node ${r.category} ${data.muted ? "is-muted" : ""}`}
+      className={`resource-node ${r.category} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
       data-testid={`node-${r.id}`}
     >
       <Handle type="target" position={Position.Top} />
@@ -70,7 +89,8 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
           <ResourceIcon resource={r} />
         </span>
         <span className="node-kind">{shortType(r.type)}</span>
-        <span className="node-dot" />
+        <NodeMark mark={data.mark as DeployMark | undefined} />
+        {!data.mark && <span className="node-dot" />}
       </div>
       <strong title={r.id}>{r.label || r.name}</strong>
       <span className="node-detail">
@@ -87,7 +107,7 @@ function ScopeCard({ data }: NodeProps<ResourceNode>) {
     az = r.properties.find((p) => p.name === "availability_zone");
   return (
     <div
-      className={`scope-node ${r.type === "aws_vpc" ? "vpc-scope" : "subnet-scope"} ${data.muted ? "is-muted" : ""}`}
+      className={`scope-node ${r.type === "aws_vpc" ? "vpc-scope" : "subnet-scope"} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
       data-testid={`node-${r.id}`}
     >
       <Handle type="target" position={Position.Top} />
@@ -97,6 +117,7 @@ function ScopeCard({ data }: NodeProps<ResourceNode>) {
         </span>
         <strong>{r.label || r.name}</strong>
         <span className="scope-type">{shortType(r.type)}</span>
+        <NodeMark mark={data.mark as DeployMark | undefined} />
       </div>
       <div className="scope-meta">
         <span>{String(cidr?.value ?? cidr?.expression ?? "")}</span>
@@ -122,6 +143,7 @@ interface Props {
   query: string;
   onSelect: (id: string) => void;
   resetKey: string;
+  marks?: Record<string, DeployMark>;
 }
 function Graph({
   resources,
@@ -130,19 +152,53 @@ function Graph({
   query,
   onSelect,
   resetKey,
+  marks,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView, zoomIn, zoomOut } = useReactFlow();
+  // Flash nodes whose declaration changed, so live edits are easy to follow.
+  const signatures = useRef<Map<string, string> | null>(null);
+  const [updated, setUpdated] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const next = new Map(resources.map((r) => [r.id, signature(r)]));
+    const previous = signatures.current;
+    signatures.current = next;
+    if (!previous) return;
+    const changed = new Set(
+      [...next]
+        .filter(([id, sig]) => previous.get(id) !== sig)
+        .map(([id]) => id),
+    );
+    if (!changed.size) return;
+    setUpdated(changed);
+    const timer = window.setTimeout(() => setUpdated(new Set()), 900);
+    return () => clearTimeout(timer);
+  }, [resources]);
+  useEffect(() => {
+    signatures.current = null;
+  }, [resetKey]);
+  const decorate = useCallback(
+    (list: ResourceNode[]) =>
+      list.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          mark: marks?.[node.id],
+          updated: updated.has(node.id),
+        },
+      })),
+    [marks, updated],
+  );
   const layout = useCallback(() => {
     const graph = buildGraph(resources, relations, selected, query);
-    setNodes(graph.nodes);
+    setNodes(decorate(graph.nodes));
     setEdges(graph.edges);
-  }, [resources, relations, selected, query, setNodes, setEdges]);
+  }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
   useEffect(() => {
     const graph = buildGraph(resources, relations, selected, query);
     setNodes((previous) =>
-      graph.nodes.map((node) => {
+      decorate(graph.nodes).map((node) => {
         const old = previous.find(
           (n) => n.id === node.id && n.parentId === node.parentId,
         );
@@ -150,7 +206,7 @@ function Graph({
       }),
     );
     setEdges(graph.edges);
-  }, [resources, relations, selected, query, setNodes, setEdges]);
+  }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fitView({ padding: 0.1, duration: 250 });
@@ -243,6 +299,11 @@ function Graph({
         <span>
           <i className="legend-reference" /> Referencia
         </span>
+        {marks && Object.keys(marks).length > 0 && (
+          <span>
+            <i className="legend-floci" /> Floci
+          </span>
+        )}
       </div>
       {!resources.length && (
         <div className="canvas-empty">

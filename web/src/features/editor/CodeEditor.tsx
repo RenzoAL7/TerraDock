@@ -59,6 +59,8 @@ export default function CodeEditor({
   diagnostics,
   onChange,
   onSave,
+  onCursor,
+  highlight,
 }: {
   path: string;
   value: string;
@@ -66,10 +68,41 @@ export default function CodeEditor({
   diagnostics: Diagnostic[];
   onChange: (value: string) => void;
   onSave: () => void;
+  /** Called when the user (not the program) moves the caret. */
+  onCursor?: (line: number) => void;
+  /** Lines of the resource selected in the diagram, inclusive. */
+  highlight?: { start: number; end: number } | null;
 }) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const decorations = useRef<monaco.editor.IEditorDecorationsCollection | null>(
+    null,
+  );
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onCursorRef = useRef(onCursor);
+  onCursorRef.current = onCursor;
+  const start = highlight?.start ?? 0,
+    end = highlight?.end ?? 0;
+  const applyHighlight = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    decorations.current ??= editor.createDecorationsCollection();
+    decorations.current.set(
+      start > 0
+        ? [
+            {
+              range: new monaco.Range(start, 1, Math.max(start, end), 1),
+              options: {
+                isWholeLine: true,
+                className: "linked-resource-line",
+                linesDecorationsClassName: "linked-resource-gutter",
+              },
+            },
+          ]
+        : [],
+    );
+  }, [start, end]);
+  useEffect(applyHighlight, [applyHighlight, value]);
   useEffect(() => {
     const editor = editorRef.current;
     if (editor && line > 0) {
@@ -113,6 +146,12 @@ export default function CodeEditor({
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
           onSaveRef.current(),
         );
+        editor.onDidChangeCursorPosition((event) => {
+          if (event.source === "api" || event.source === "modelChange") return;
+          onCursorRef.current?.(event.position.lineNumber);
+        });
+        decorations.current = editor.createDecorationsCollection();
+        applyHighlight();
         if (line > 0) editor.revealLineInCenter(line);
       }}
       options={{

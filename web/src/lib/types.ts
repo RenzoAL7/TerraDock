@@ -102,3 +102,50 @@ export function normalizeProject(project: Project): Project {
     findings: project.findings ?? [],
   };
 }
+
+/** Analysis of unsaved drafts layered over the saved project (no disk write). */
+export interface Preview {
+  projectId: string;
+  revision: string;
+  resources: Resource[];
+  edges: ResourceEdge[];
+  diagnostics: Diagnostic[];
+  findings: Finding[];
+  valid: boolean;
+}
+
+export type DeployAction = "create" | "update" | "delete" | "replace";
+export interface FlociJob {
+  id: string;
+  action: "start" | "plan" | "apply" | "destroy" | "refresh";
+  projectId: string;
+  state: "running" | "succeeded" | "failed" | "canceled";
+  error?: string;
+  log: string[];
+  started: string;
+  finished?: string;
+}
+export interface FlociPlan {
+  projectId: string;
+  changes: Record<string, DeployAction>;
+  counts: Partial<Record<DeployAction, number>>;
+  createdAt: string;
+  stale: boolean;
+}
+export interface FlociStatus {
+  endpoint: string;
+  reachable: boolean;
+  terraform: string;
+  terraformVersion: string;
+  canStart: boolean;
+  job?: FlociJob;
+  plan?: FlociPlan;
+  deployed: string[];
+  variables: FlociVariable[];
+}
+export interface FlociVariable {
+  name: string;
+  description?: string;
+  required: boolean;
+  provided: boolean;
+}

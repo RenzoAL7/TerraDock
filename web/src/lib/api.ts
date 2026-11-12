@@ -1,6 +1,9 @@
 import {
   normalizeProject,
   type Directory,
+  type FlociJob,
+  type FlociStatus,
+  type Preview,
   type Project,
   type Session,
 } from "./types";
@@ -83,6 +86,51 @@ export const api = {
         value,
         expectedRevision,
       }),
+    }),
+};
+
+export const liveApi = {
+  analyze: (projectId: string, files: Record<string, string>) =>
+    request<Preview>("/analyze", {
+      method: "POST",
+      body: JSON.stringify({ projectId, files }),
+    }),
+  editDraft: (
+    projectId: string,
+    path: string,
+    content: string,
+    resourceId: string,
+    property: string,
+    value: string | number | boolean,
+  ) =>
+    request<{ content: string }>("/edit-draft", {
+      method: "POST",
+      body: JSON.stringify({
+        projectId,
+        path,
+        content,
+        resourceId,
+        property,
+        value,
+      }),
+    }),
+};
+
+export const flociApi = {
+  status: () => request<FlociStatus>("/floci"),
+  run: (
+    action: FlociJob["action"],
+    projectId: string,
+    variables: Record<string, string> = {},
+  ) =>
+    request<FlociJob>("/floci/run", {
+      method: "POST",
+      body: JSON.stringify({ action, projectId, variables }),
+    }),
+  cancel: () =>
+    request<{ canceled: boolean }>("/floci/cancel", {
+      method: "POST",
+      body: "{}",
     }),
 };
 

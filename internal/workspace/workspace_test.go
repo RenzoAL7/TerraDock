@@ -365,3 +365,71 @@ func TestInstanceIdentityIsStableUntilManagerRestarts(t *testing.T) {
 		t.Fatal("new manager reused previous process identity")
 	}
 }
+
+func TestWatcherReflectsExternalEditQuickly(t *testing.T) {
+	m, project, initial := localProject(t)
+	events, cancel := m.Subscribe()
+	defer cancel()
+	<-events
+	// Give the native watcher a moment to attach to the opened folder.
+	time.Sleep(50 * time.Millisecond)
+	started := time.Now()
+	updated := strings.Replace(networkSource, "10.0.1.0/24", "10.0.9.0/24", 1)
+	if err := os.WriteFile(filepath.Join(project, "main.tf"), []byte(updated), 0640); err != nil {
+		t.Fatal(err)
+	}
+	next := waitSnapshot(t, events, func(s Snapshot) bool { return s.Sequence > initial.Sequence && s.Files[0].Content == updated })
+	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
+		t.Fatalf("external edit took %s to reach the diagram", elapsed)
+	}
+	if len(next.Resources) != 2 {
+		t.Fatal("external edit did not produce a graph")
+	}
+}
+
+func TestAnalyzePreviewsDraftWithoutMutatingProject(t *testing.T) {
+	m, project, initial := localProject(t)
+	draft := networkSource + "resource \"aws_instance\" \"web\" {\n  subnet_id = aws_subnet.public.id\n}\n"
+	preview, err := m.Analyze(initial.ID, map[string]string{"main.tf": draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Valid || len(preview.Resources) != 3 || preview.Revision != initial.Revision {
+		t.Fatalf("unexpected preview: valid=%v resources=%d", preview.Valid, len(preview.Resources))
+	}
+	if got := m.Snapshot(); got.Sequence != initial.Sequence || len(got.Resources) != 2 {
+		t.Fatal("analyze mutated the workspace")
+	}
+	disk, _ := os.ReadFile(filepath.Join(project, "main.tf"))
+	if string(disk) != networkSource {
+		t.Fatal("analyze wrote to disk")
+	}
+	broken, err := m.Analyze(initial.ID, map[string]string{"main.tf": `resource "aws_vpc" "x" {`})
+	if err != nil || broken.Valid || len(broken.Diagnostics) == 0 {
+		t.Fatal("invalid draft should return diagnostics")
+	}
+	_, err = m.Analyze(initial.ID, map[string]string{"other.tf": ""})
+	errorCode(t, err, "not_found")
+	_, err = m.Analyze("other", nil)
+	errorCode(t, err, "project_conflict")
+}
+
+func TestEditDraftAppliesLiteralToUnsavedContent(t *testing.T) {
+	m, project, initial := localProject(t)
+	draft := strings.Replace(networkSource, "# preserve this comment", "# unsaved note", 1)
+	updated, err := m.EditDraft(initial.ID, "main.tf", draft, "aws_subnet.public", "cidr_block", "10.0.2.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(updated, "# unsaved note") || !strings.Contains(updated, `"10.0.2.0/24"`) {
+		t.Fatalf("edit did not apply over the draft: %s", updated)
+	}
+	disk, _ := os.ReadFile(filepath.Join(project, "main.tf"))
+	if string(disk) != networkSource {
+		t.Fatal("edit-draft wrote to disk")
+	}
+	_, err = m.EditDraft(initial.ID, "main.tf", draft, "aws_subnet.public", "vpc_id", "x")
+	errorCode(t, err, "invalid_property")
+	_, err = m.EditDraft(initial.ID, "nope.tf", draft, "aws_subnet.public", "cidr_block", "x")
+	errorCode(t, err, "not_found")
+}

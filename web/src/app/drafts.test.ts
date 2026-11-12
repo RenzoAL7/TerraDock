@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterFileSave, afterPropertySave } from "./drafts";
+import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import type { Draft, Project, Property, Resource } from "../lib/types";
 import type { PropertyDraft } from "../features/inspector/Inspector";
 
@@ -85,52 +85,45 @@ describe("in-flight edits", () => {
         )["main.tf"],
       ).toEqual(changed);
   });
-  it("allows consecutive property saves in one file without weakening conflict detection", () => {
-    const sent: PropertyDraft = {
-      projectId: "p",
-      revision: "old",
-      text: "medium",
-    };
-    const pending = { ...sent, text: "new description" };
-    const before = snapshot("old"),
-      after = snapshot("new");
-    after.resources = [
-      {
-        ...resource,
-        properties: [
-          { ...property, expression: '"medium"', value: "medium" },
-          other,
-        ],
-      },
-    ];
+});
+
+describe("live inspector edits", () => {
+  const key = "aws_instance.web:instance_type";
+  it("drops text once the live view reflects it", () => {
+    const typed: PropertyDraft = { projectId: "p", text: "small" };
+    expect(settledProperties({ [key]: typed }, [resource], "p")).toEqual({});
+  });
+  it("keeps text that is still being applied", () => {
+    const typed: PropertyDraft = { projectId: "p", text: "large" };
+    const current = { [key]: typed };
+    expect(settledProperties(current, [resource], "p")).toBe(current);
+  });
+  it("drops text from another project or for fields that disappeared", () => {
+    const typed: PropertyDraft = { projectId: "old", text: "large" };
+    expect(settledProperties({ [key]: typed }, [resource], "p")).toEqual({});
     expect(
-      afterPropertySave(
-        {
-          "aws_instance.web:instance_type": sent,
-          "aws_instance.web:description": pending,
-        },
-        resource,
-        property,
-        sent,
-        before,
-        after,
-      ),
-    ).toEqual({
-      "aws_instance.web:description": { ...pending, revision: "new" },
+      settledProperties({ [key]: { ...typed, projectId: "p" } }, [], "p"),
+    ).toEqual({});
+  });
+});
+
+describe("withDraft", () => {
+  const saved = { content: "disk", revision: "r1" };
+  it("creates a draft based on the saved revision", () => {
+    expect(withDraft({}, "main.tf", "typed", saved, "p")).toEqual({
+      "main.tf": { content: "typed", baseRevision: "r1", projectId: "p" },
     });
-    after.resources[0].properties[1] = {
-      ...other,
-      expression: '"externally modified"',
-    };
-    expect(
-      afterPropertySave(
-        { "aws_instance.web:description": pending },
-        resource,
-        property,
-        sent,
-        before,
-        after,
-      )["aws_instance.web:description"].revision,
-    ).toBe("old");
+  });
+  it("keeps the original baseline while typing and clears on match", () => {
+    const first = withDraft({}, "main.tf", "a", saved, "p");
+    const second = withDraft(
+      first,
+      "main.tf",
+      "ab",
+      { ...saved, revision: "r2" },
+      "p",
+    );
+    expect(second["main.tf"].baseRevision).toBe("r1");
+    expect(withDraft(second, "main.tf", "disk", saved, "p")).toEqual({});
   });
 });
