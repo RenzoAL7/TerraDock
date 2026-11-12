@@ -1,6 +1,6 @@
 # Demo pública interactiva
 
-Abre **http://193.122.221.201/demo/** o pulsa **Probar demo** en la portada. No requiere instalar TerraDock ni crear una cuenta.
+Abre **https://terradock.renzoaguilar.dev/demo/** o pulsa **Probar demo** en la portada. No requiere instalar TerraDock ni crear una cuenta.
 
 ## Recorrido de prueba
 
@@ -48,6 +48,6 @@ make e2e
 make public-e2e
 ```
 
-La suite pública incluye 19 casos. Contra un servidor existente usa `PUBLIC_BASE_URL=http://193.122.221.201 npm --prefix web run test:public`: se ejecutan 18 casos y se omite únicamente la entrada de desarrollo. Los escenarios comprueban edición bidireccional, relaciones derivadas del código, errores, exportación, recuperación de carga, teclado y tamaños 320/390/768/1440 para la demo.
+La suite pública incluye 19 casos. Contra un servidor existente usa `PUBLIC_BASE_URL=https://terradock.renzoaguilar.dev npm --prefix web run test:public`: se ejecutan 18 casos y se omite únicamente la entrada de desarrollo. Los escenarios comprueban edición bidireccional, relaciones derivadas del código, errores, exportación, recuperación de carga, teclado y tamaños 320/390/768/1440 para la demo.
 
 La guía de [publicación](public-deployment.md) documenta la imagen GHCR, las políticas del servidor y la actualización mediante Argo CD. La [evidencia del despliegue](deployment/interactive-demo.md) contiene las revisiones, los resultados y las capturas verificadas.

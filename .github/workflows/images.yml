@@ -1,0 +1,159 @@
+name: Imagenes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - web/**
+      - cmd/terradock-demo/**
+      - internal/publicdemo/**
+      - internal/terraform/**
+      - go.mod
+      - go.sum
+      - scripts/build-public-demo.mjs
+      - scripts/smoke-public.mjs
+      - scripts/promote.mjs
+      - Dockerfile.public
+      - Dockerfile.public.dockerignore
+      - docker/public-nginx.conf
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Portada publica
+    # La VM del clúster es ARM64: se construye solo esa arquitectura, en un runner ARM nativo.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Construir
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.public
+          platforms: linux/arm64
+          build-args: VCS_REF=${{ github.sha }}
+          load: true
+          tags: check:public
+          # Capas reutilizadas entre ejecuciones: solo se reconstruye lo que cambio.
+          cache-from: type=gha,scope=public
+          cache-to: type=gha,scope=public,mode=max
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Probar
+        run: |
+          docker run -d --name public-check --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:8088:8080 check:public
+          for attempt in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8088/healthz && break
+            sleep 1
+          done
+          # Portada, demo, cabeceras, assets locales, 404 de /api y revision publicada.
+          PUBLIC_BASE_URL=http://127.0.0.1:8088 EXPECTED_REVISION="$GITHUB_SHA" node scripts/smoke-public.mjs
+          # Usuario sin privilegios y sin codigo fuente ni .git dentro de la imagen.
+          docker exec public-check sh -c 'test "$(id -u)" = 101 && test ! -e /srv/terradock/src && test ! -e /srv/terradock/.git'
+          test "$(docker image inspect check:public --format '{{.Architecture}}')" = arm64
+          docker rm -f public-check
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publicar
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.public
+          platforms: linux/arm64
+          build-args: VCS_REF=${{ github.sha }}
+          # Reusa las capas de "Construir": publica la misma imagen que se probo.
+          cache-from: type=gha,scope=public
+          push: true
+          tags: ghcr.io/renzoal7/terradock-public:sha-${{ github.sha }}
+          provenance: true
+      - name: Registrar digest inmutable
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf 'ghcr.io/renzoal7/terradock-public@%s\n' "$DIGEST" | tee image.txt
+          printf 'Imagen: `ghcr.io/renzoal7/terradock-public@%s`\n' "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-public
+          path: image.txt
+          retention-days: 30
+
+  promote:
+    name: Promover en K3s-Cortex
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comprobar el token de Cortex
+        env:
+          TOKEN: ${{ secrets.CORTEX_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Falta el secreto CORTEX_REPO_TOKEN (acceso de escritura a RenzoAL7/K3s-Cortex)."
+            exit 1
+          fi
+      - name: Clonar la infraestructura
+        uses: actions/checkout@v4
+        with:
+          repository: RenzoAL7/K3s-Cortex
+          token: ${{ secrets.CORTEX_REPO_TOKEN }}
+          path: cortex
+      - uses: actions/download-artifact@v4
+        with:
+          name: digest-public
+          path: digests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Fijar el digest en el overlay
+        id: pin
+        run: |
+          node scripts/promote.mjs cortex digests/image.txt
+          git -C cortex diff --check
+          echo "image=$(cat digests/image.txt)" >> "$GITHUB_OUTPUT"
+      - name: Renderizar sin contactar el cluster
+        run: kubectl kustomize cortex/apps/terradock/overlays/ip > /dev/null
+      - name: Publicar en K3s-Cortex
+        # Promocion automatica: el commit va directo a main y Argo CD lo aplica al recibir
+        # el webhook de GitHub. Para revertir, revierte este commit en K3s-Cortex.
+        working-directory: cortex
+        env:
+          IMAGE: ${{ steps.pin.outputs.image }}
+        run: |
+          git add -A apps/terradock
+          if git diff --cached --quiet; then
+            echo "El digest ya estaba desplegado."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf 'chore(terradock): promote %s\n\nOrigen: https://github.com/RenzoAL7/TerraDock/commit/%s\nWorkflow: https://github.com/RenzoAL7/TerraDock/actions/runs/%s\n- `%s`\n' \
+            "$GITHUB_SHA" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$IMAGE" > "$RUNNER_TEMP/mensaje.txt"
+          git commit -q -F "$RUNNER_TEMP/mensaje.txt"
+          for attempt in 1 2 3; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep 5
+          done
+          echo "::error::No se pudo publicar en K3s-Cortex"
+          exit 1

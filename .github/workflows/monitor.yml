@@ -1,0 +1,83 @@
+name: Monitor
+
+# Revisa el sitio publico cada 3 horas. Si algo falla abre (o actualiza) un issue, que GitHub
+# notifica por correo; cuando todo vuelve a estar bien, lo cierra.
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    name: Portada y demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE: https://terradock.renzoaguilar.dev
+      TITULO: "Monitor: el sitio público tiene un problema"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Revisar
+        id: revision
+        run: |
+          problemas=""
+          falla() { problemas="${problemas}- $1"$'\n'; }
+          codigo() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1"; }
+
+          [ "$(codigo "$SITE/")" = 200 ] || falla "La portada no responde 200."
+          [ "$(codigo "$SITE/demo/")" = 200 ] || falla "La demo interactiva no responde 200."
+          [ "$(codigo "$SITE/api/session")" = 404 ] || falla "/api/session debería responder 404 en el sitio público."
+
+          # Cabeceras de seguridad, assets locales con caché inmutable, 404 y release.json.
+          if ! salida=$(PUBLIC_BASE_URL="$SITE" node scripts/smoke-public.mjs 2>&1); then
+            falla "La comprobación completa falló: $(printf '%s' "$salida" | tail -n 3 | tr '\n' ' ')"
+          fi
+
+          revision=$(curl -s --max-time 20 "$SITE/release.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["revision"])' || true)
+          if [ -n "$revision" ]; then
+            echo "Revisión publicada: \`$revision\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo "problemas<<EOF"
+            printf '%s' "$problemas"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if [ -n "$problemas" ]; then
+            printf '### Problemas\n%s' "$problemas" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Todo en orden." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Abrir o actualizar el aviso
+        if: steps.revision.outputs.problemas != ''
+        env:
+          PROBLEMAS: ${{ steps.revision.outputs.problemas }}
+        run: |
+          numero=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITULO\" in:title" --json number --jq '.[0].number')
+          cuerpo=$(printf '%s\n\nRevisión: %s/%s/actions/runs/%s' "$PROBLEMAS" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          if [ -n "$numero" ]; then
+            gh issue comment "$numero" --repo "$GITHUB_REPOSITORY" --body "$cuerpo"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" --body "$cuerpo"
+          fi
+
+      - name: Cerrar el aviso si ya no hay problemas
+        if: steps.revision.outputs.problemas == ''
+        run: |
+          numero=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITULO\" in:title" --json number --jq '.[0].number')
+          if [ -n "$numero" ]; then
+            gh issue close "$numero" --repo "$GITHUB_REPOSITORY" --comment "Todo volvió a responder bien."
+          fi
