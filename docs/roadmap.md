@@ -280,7 +280,7 @@ La evaluación completa de IAM, estimación de costos, otros proveedores, colabo
 2. Cerrar la fase 3: comparación de versiones en conflicto, recuperación de borradores tras cerrar o reiniciar, y archivos creados, renombrados o eliminados externamente.
 3. Completar V8: detectar antes de aplicar los tipos y servicios que Floci no emula (por ejemplo `t3.large`) y comparar atributos con el estado desplegado.
 4. Fase 4: variables, locals, outputs y módulos locales visibles en el diagrama.
-5. Fase 9: binarios solo ARM64 (macOS Apple Silicon y Linux arm64), sin AMD64, con frontend embebido en un único ejecutable y apertura del navegador.
+5. Fase 9: binarios ARM64 y AMD64 para macOS, Linux y Windows (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64), con frontend embebido en un único ejecutable y apertura del navegador.
 
 No se asignan fechas antes de validar el núcleo técnico. Las estimaciones se harán con evidencia de esa prueba y la disponibilidad real de trabajo.
 
