@@ -1,0 +1,54 @@
+name: Binarios
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publicar binarios
+    # Runner ARM nativo; Go compila para todas las plataformas sin emulación.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Instalar dependencias
+        run: make install
+      - name: Pruebas
+        run: make test
+      - name: Construir binarios
+        run: VERSION="${GITHUB_REF_NAME#v}" make package
+      - name: Probar el binario linux/arm64
+        run: |
+          mkdir smoke
+          tar -xzf dist/terradock_linux_arm64.tar.gz -C smoke
+          ./smoke/terradock --version
+          ./smoke/terradock --root examples --port 7331 --open=false &
+          for attempt in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:7331/api/session >/dev/null && break
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:7331/ | grep -q '<div id="root"'
+          kill %1
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "TerraDock $GITHUB_REF_NAME" --generate-notes --verify-tag

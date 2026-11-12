@@ -1,5 +1,5 @@
 GO ?= go
-GO_PACKAGES := ./cmd/... ./internal/... ./examples/...
+GO_PACKAGES := ./cmd/... ./internal/... ./examples/... ./web
 GOFMT ?= $(shell $(GO) env GOROOT)/bin/gofmt
 NPM ?= npm
 ROOT ?= .
@@ -7,7 +7,7 @@ PORT ?= 7331
 ASSETS ?= web/dist
 DEV_ORIGIN ?= http://127.0.0.1:5173
 
-.PHONY: help install build run dev-api dev-web check test e2e-install e2e public-dev public-build public-preview public-e2e
+.PHONY: help install build run dev-api dev-web check test e2e-install e2e public-dev public-build public-preview public-e2e package
 
 help:
 	@echo 'install      Instalar dependencias Go y frontend'
@@ -23,6 +23,7 @@ help:
 	@echo 'public-build Compilar solo la portada en web/dist-public'
 	@echo 'public-preview Servir la portada compilada en 127.0.0.1:4174'
 	@echo 'public-e2e   Verificar la portada estática en Chromium'
+	@echo 'package      Binarios autocontenidos por plataforma en dist/ (VERSION=x.y.z)'
 
 install:
 	$(GO) mod download
@@ -71,3 +72,6 @@ public-preview:
 
 public-e2e:
 	$(NPM) --prefix web run test:public
+
+package: build
+	GO="$(GO)" sh scripts/package.sh

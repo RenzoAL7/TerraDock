@@ -37,6 +37,8 @@ jobs:
         run: make test
       - name: Compilar la aplicacion local
         run: make build
+      - name: Empaquetar un binario autocontenido
+        run: TARGETS="linux/amd64" make package
 
   browser:
     name: Flujos de navegador
