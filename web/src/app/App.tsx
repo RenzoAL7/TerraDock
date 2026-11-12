@@ -62,6 +62,14 @@ function readAutosave() {
     return true;
   }
 }
+/** First resource worth showing: an instance when there is one. */
+function defaultSelection(project: Project) {
+  return (
+    project.resources.find((r) => r.type === "aws_instance")?.id ??
+    project.resources[0]?.id ??
+    ""
+  );
+}
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
   delete next[key];
@@ -82,9 +90,7 @@ export default function App() {
   const { project, session, error, setError, busy, connected, perform } =
     useWorkspace();
   const [view, setView] = useState<View>("architecture");
-  const [selected, setSelected] = useState(() =>
-    window.matchMedia("(min-width: 901px)").matches ? "aws_instance.app_a" : "",
-  );
+  const [selected, setSelected] = useState("");
   const [filePath, setFilePath] = useState("main.tf");
   const [line, setLine] = useState(1);
   // Nonces: re-reveal in the editor / re-center in the canvas even when the
@@ -202,6 +208,15 @@ export default function App() {
     },
     [],
   );
+
+  // On wide screens, select a resource of whatever project the server opened.
+  const initialSelection = useRef(false);
+  useEffect(() => {
+    if (!project || initialSelection.current) return;
+    initialSelection.current = true;
+    if (window.matchMedia("(min-width: 901px)").matches)
+      setSelected((current) => current || defaultSelection(project));
+  }, [project]);
 
   // Inspector text is dropped once the live view reflects it.
   useEffect(() => {
@@ -348,11 +363,7 @@ export default function App() {
   const adopt = (next: Project) => {
     setDrafts({});
     setProperties({});
-    setSelected(
-      next.resources.find((r) => r.type === "aws_instance")?.id ??
-        next.resources[0]?.id ??
-        "",
-    );
+    setSelected(defaultSelection(next));
     setFilePath(
       next.files.find((f) => f.path === "main.tf")?.path ??
         next.files[0]?.path ??

@@ -42,6 +42,8 @@ La interfaz permite explorar una demostración y abrir un proyecto local. El con
 
 En modo local, `--root` delimita el espacio accesible. Abrir una carpeta selecciona el módulo que se analizará dentro de esa raíz. No se agrega recursivamente cualquier `.tf` encontrado: cada módulo mantiene su contexto.
 
+Al arrancar, `cmd/terradock` decide el primer proyecto: la carpeta indicada como argumento (o `--open-path`), que debe abrirse o el programa termina con un error; si no se indica, la raíz cuando contiene archivos `.tf`; y si no, el ejemplo en memoria. Sin `--root` explícito, la carpeta indicada también es la raíz permitida. Abrir un proyecto solo lee archivos; nunca ejecuta Terraform.
+
 ## Contrato de la API local
 
 `GET /api/session` devuelve el token de sesión, `instanceId`, raíz permitida, modo y versión. Las mutaciones requieren `Content-Type: application/json` y el encabezado `X-TerraDock-Session`. El servidor comprueba el host de loopback y el origen; la excepción de desarrollo admite únicamente el origen exacto configurado y no habilita CORS.

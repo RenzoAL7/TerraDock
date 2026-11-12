@@ -37,7 +37,7 @@ Todas las versiones y sus sumas de verificación están en [Releases](https://gi
 
 1. **Descomprime el archivo.** Dentro está el programa `terradock` (`terradock.exe` en Windows).
 2. **Ábrelo desde la carpeta de tus proyectos.** En una terminal, entra en la carpeta que contiene tus archivos `.tf` y ejecútalo. TerraDock solo puede abrir esa carpeta y lo que contiene.
-3. **Usa el navegador.** Se abre solo en [http://127.0.0.1:7331](http://127.0.0.1:7331). Pulsa **Abrir carpeta**, elige un proyecto y edita en el código o en el diagrama.
+3. **Usa el navegador.** Se abre solo en [http://127.0.0.1:7331](http://127.0.0.1:7331). Si la carpeta tiene archivos `.tf`, TerraDock la abre directamente; si no, muestra un ejemplo y puedes pulsar **Abrir carpeta** para elegir un proyecto.
 4. **Para cerrarlo,** pulsa `Ctrl+C` en la terminal.
 
 En macOS y Linux, desde la terminal:
@@ -58,11 +58,14 @@ Cambia `darwin_arm64` por el nombre de tu sistema en la tabla.
 Opciones útiles:
 
 ```sh
-terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir (por defecto, la actual)
+terradock ./infra              # Abrir ese proyecto al arrancar (también: --open-path ./infra)
+terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir (por defecto, la del proyecto o la actual)
 terradock --port 8080          # Otro puerto (por defecto, 7331)
 terradock --open=false         # No abrir el navegador
 terradock --version
 ```
+
+Si el puerto ya está en uso (por ejemplo, porque TerraDock ya está abierto), el programa lo indica y sugiere otro con `--port`.
 
 ## ¿Qué necesito?
 
