@@ -5,7 +5,12 @@ La demo debe conservar una relación comprobable entre el Terraform original y s
 ## Ramas y revisión
 
 - `main`: integración estable; cada cambio llega mediante un pull request.
-- `codex/<tema>`: funcionalidades, correcciones y documentación trabajadas con Codex. Usa un nombre que describa el cambio, por ejemplo `codex/parser-modules`.
+- Ramas de trabajo con un prefijo según el tipo de cambio y un nombre que lo describa:
+  - `feat/<tema>`: funcionalidades nuevas, por ejemplo `feat/modulos-locales`.
+  - `fix/<tema>`: correcciones.
+  - `docs/<tema>`: documentación.
+  - `ci/<tema>`: workflows, imágenes y despliegue.
+  - `perf/<tema>`: rendimiento.
 - Las ramas duran lo que dura el cambio. No mantenemos una rama `develop` adicional.
 - Actualiza la rama, ejecuta las comprobaciones y prepara commits enfocados. No incluyas dependencias instaladas, archivos de estado Terraform ni resultados de pruebas.
 - La revisión debe describir el problema, el comportamiento final, las pruebas ejecutadas y los límites relevantes.
