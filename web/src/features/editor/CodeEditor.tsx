@@ -3,6 +3,7 @@ import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import type { Diagnostic } from "../../lib/types";
+import { minimalEdit } from "./minimalEdit";
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 loader.config({ monaco });
@@ -56,6 +57,7 @@ export default function CodeEditor({
   path,
   value,
   line,
+  revealKey = 0,
   diagnostics,
   onChange,
   onSave,
@@ -65,6 +67,8 @@ export default function CodeEditor({
   path: string;
   value: string;
   line: number;
+  /** Changes whenever `line` must be revealed again, even if unchanged. */
+  revealKey?: number;
   diagnostics: Diagnostic[];
   onChange: (value: string) => void;
   onSave: () => void;
@@ -79,6 +83,8 @@ export default function CodeEditor({
   );
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const lineRef = useRef(line);
+  lineRef.current = line;
   const onCursorRef = useRef(onCursor);
   onCursorRef.current = onCursor;
   const start = highlight?.start ?? 0,
@@ -109,7 +115,7 @@ export default function CodeEditor({
       editor.revealLineInCenter(line);
       editor.setPosition({ lineNumber: line, column: 1 });
     }
-  }, [line, path]);
+  }, [line, path, revealKey]);
   const updateMarkers = useCallback(() => {
     const model = editorRef.current?.getModel();
     if (!model) return;
@@ -132,16 +138,43 @@ export default function CodeEditor({
     );
   }, [diagnostics, path]);
   useEffect(updateMarkers, [updateMarkers]);
+  // Apply external changes (inspector edits, saves, external files) as a
+  // minimal edit, so scroll position, cursor and undo history survive.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const syncValue = useCallback(() => {
+    const editor = editorRef.current,
+      model = editor?.getModel();
+    if (!editor || !model) return;
+    const next = valueRef.current,
+      current = model.getValue();
+    if (current === next) return;
+    const edit = minimalEdit(current, next);
+    editor.pushUndoStop();
+    editor.executeEdits("terradock", [
+      {
+        range: monaco.Range.fromPositions(
+          model.getPositionAt(edit.start),
+          model.getPositionAt(edit.end),
+        ),
+        text: edit.text,
+        forceMoveMarkers: true,
+      },
+    ]);
+    editor.pushUndoStop();
+  }, []);
+  useEffect(syncValue, [syncValue, value]);
   return (
     <Editor
       path={path}
       language="terradock-hcl"
       theme="terradock-night"
-      value={value}
+      defaultValue={value}
       onChange={(v) => onChange(v ?? "")}
       loading={<div className="editor-loading">Abriendo editor local…</div>}
       onMount={(editor) => {
         editorRef.current = editor;
+        syncValue();
         updateMarkers();
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
           onSaveRef.current(),
@@ -152,6 +185,13 @@ export default function CodeEditor({
         });
         decorations.current = editor.createDecorationsCollection();
         applyHighlight();
+        // The first layout happens after mount; scroll once it has a size.
+        // Only scroll: moving the caret here could drop a user selection.
+        const once = editor.onDidLayoutChange(() => {
+          once.dispose();
+          if (lineRef.current > 0 && !editor.hasTextFocus())
+            editor.revealLineInCenter(lineRef.current);
+        });
         if (line > 0) editor.revealLineInCenter(line);
       }}
       options={{

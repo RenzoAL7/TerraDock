@@ -87,6 +87,11 @@ export default function App() {
   );
   const [filePath, setFilePath] = useState("main.tf");
   const [line, setLine] = useState(1);
+  // Nonces: re-reveal in the editor / re-center in the canvas even when the
+  // same resource or line is chosen again.
+  const [reveal, setReveal] = useState(0);
+  const [focus, setFocus] = useState({ id: "", n: 0 });
+  const focusOn = (id: string) => setFocus((f) => ({ id, n: f.n + 1 }));
   const [query, setQuery] = useState("");
   const [sidebar, setSidebar] = useState(
     () => window.matchMedia("(min-width: 901px)").matches,
@@ -104,7 +109,8 @@ export default function App() {
   const hasUnsaved =
     Object.keys(drafts).length > 0 || Object.keys(properties).length > 0;
   // Saved files + unsaved drafts, re-analyzed as you type.
-  const live = useLivePreview(project, drafts);
+  const urgentPreview = useRef(false);
+  const live = useLivePreview(project, drafts, 60, urgentPreview);
   const floci = useFloci(project?.id);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
@@ -182,6 +188,7 @@ export default function App() {
               current.id,
             );
             draftsRef.current = next;
+            urgentPreview.current = true;
             setDrafts(next);
             return "";
           } catch (reason) {
@@ -310,13 +317,15 @@ export default function App() {
             ? "Cambios en vivo · se guardan automáticamente"
             : "Cambios en vivo · ⌘/Ctrl + S para guardar"
           : "Sincronizado con el archivo";
-  const selectResource = (id: string) => {
+  const selectResource = (id: string, fromCanvas = false) => {
     setSelected(id);
+    if (!fromCanvas) focusOn(id);
     const target = live.resources.find((r) => r.id === id);
     // Graph → code: in split view, follow the selected node in the editor.
     if (target && view === "split") {
       setFilePath(target.file);
       setLine(target.line);
+      setReveal((n) => n + 1);
     }
   };
   const visibleResources = live.resources.filter((r) =>
@@ -325,6 +334,7 @@ export default function App() {
   const code = (path: string, targetLine = 1) => {
     setFilePath(path);
     setLine(targetLine);
+    setReveal((n) => n + 1);
     setView("code");
   };
   const switchWorkspace = (action: () => void) => {
@@ -400,9 +410,24 @@ export default function App() {
               </button>
               {draft && (
                 <button
-                  onClick={() =>
-                    setDrafts((current) => without(current, file.path))
-                  }
+                  onClick={() => {
+                    const next = without(drafts, file.path);
+                    draftsRef.current = next;
+                    setDrafts(next);
+                    // Inspector text for this file belonged to the discarded draft.
+                    const inFile = new Set(
+                      live.resources
+                        .filter((r) => r.file === file.path)
+                        .map((r) => r.id),
+                    );
+                    setProperties((current) =>
+                      Object.fromEntries(
+                        Object.entries(current).filter(
+                          ([key]) => !inFile.has(key.split(":")[0]),
+                        ),
+                      ),
+                    );
+                  }}
                 >
                   Descartar borrador
                 </button>
@@ -441,6 +466,7 @@ export default function App() {
                 path={`${project.id}/${file.path}`}
                 value={editorContent}
                 line={line}
+                revealKey={reveal}
                 highlight={linked}
                 diagnostics={live.diagnostics.map((d) => ({
                   ...d,
@@ -455,7 +481,10 @@ export default function App() {
                     editorContent,
                     cursor,
                   );
-                  if (target && target.id !== selected) setSelected(target.id);
+                  if (target && target.id !== selected) {
+                    setSelected(target.id);
+                    focusOn(target.id);
+                  }
                 }}
                 onChange={(content) => {
                   const next = withDraft(
@@ -748,7 +777,8 @@ export default function App() {
                 edges={live.edges}
                 selected={selected}
                 query={query}
-                onSelect={selectResource}
+                onSelect={(id) => selectResource(id, true)}
+                focus={focus}
                 resetKey={`${project.id}:${view}`}
                 marks={marks}
               />

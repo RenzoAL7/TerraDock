@@ -45,6 +45,24 @@ function NodeMark({ mark }: { mark?: DeployMark }) {
     </span>
   ) : null;
 }
+/** Everything that affects how a node renders, except its position. */
+function nodeKey(node: ResourceNode) {
+  const { resource, ...rest } = node.data;
+  return JSON.stringify([
+    node.type,
+    node.parentId,
+    node.style,
+    node.width,
+    node.height,
+    node.selected,
+    node.zIndex,
+    node.extent,
+    signature(resource),
+    rest,
+  ]);
+}
+const sameEdges = (a: Edge[], b: Edge[]) =>
+  a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 /** A stable signature of what a node shows, to flash nodes that changed. */
 const signature = (r: Resource) =>
   JSON.stringify([r.label, r.parentId, r.properties, r.dependsOn]);
@@ -144,6 +162,7 @@ interface Props {
   onSelect: (id: string) => void;
   resetKey: string;
   marks?: Record<string, DeployMark>;
+  focus?: { id: string; n: number };
 }
 function Graph({
   resources,
@@ -153,10 +172,32 @@ function Graph({
   onSelect,
   resetKey,
   marks,
+  focus,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const { fitView, zoomIn, zoomOut, getInternalNode, getZoom, setCenter } =
+    useReactFlow();
+  // Center on resources chosen outside the canvas (explorer, editor caret,
+  // inspector references), even in large diagrams that only render what is
+  // visible. `focus.n` changes on every request, including repeated ones.
+  const focusN = focus?.n ?? 0,
+    focusId = focus?.id ?? "";
+  useEffect(() => {
+    if (!focusId) return;
+    const timer = window.setTimeout(() => {
+      const node = getInternalNode(focusId);
+      if (!node) return;
+      const { x, y } = node.internals.positionAbsolute;
+      const width = node.measured.width ?? 214,
+        height = node.measured.height ?? 96;
+      void setCenter(x + width / 2, y + height / 2, {
+        zoom: Math.max(getZoom(), 0.75),
+        duration: 250,
+      });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [focusN, focusId, getInternalNode, getZoom, setCenter]);
   // Flash nodes whose declaration changed, so live edits are easy to follow.
   const signatures = useRef<Map<string, string> | null>(null);
   const [updated, setUpdated] = useState<Set<string>>(new Set());
@@ -195,17 +236,29 @@ function Graph({
     setNodes(decorate(graph.nodes));
     setEdges(graph.edges);
   }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
+  // Live edits rebuild the graph on every keystroke. Reusing the previous node
+  // object when nothing visible changed lets React Flow skip re-rendering it,
+  // which keeps large diagrams responsive.
+  const nodeKeys = useRef(new Map<string, string>());
   useEffect(() => {
     const graph = buildGraph(resources, relations, selected, query);
-    setNodes((previous) =>
-      decorate(graph.nodes).map((node) => {
-        const old = previous.find(
-          (n) => n.id === node.id && n.parentId === node.parentId,
-        );
-        return old ? { ...node, position: old.position } : node;
-      }),
+    setNodes((previous) => {
+      const byId = new Map(previous.map((n) => [n.id, n]));
+      const keys = new Map<string, string>();
+      const next = decorate(graph.nodes).map((node) => {
+        const key = nodeKey(node);
+        keys.set(node.id, key);
+        const old = byId.get(node.id);
+        if (!old || old.parentId !== node.parentId) return node;
+        if (nodeKeys.current.get(node.id) === key) return old;
+        return { ...node, position: old.position };
+      });
+      nodeKeys.current = keys;
+      return next;
+    });
+    setEdges((previous) =>
+      sameEdges(previous, graph.edges) ? previous : graph.edges,
     );
-    setEdges(graph.edges);
   }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -235,6 +288,7 @@ function Graph({
         onNodeClick={(_, node) => onSelect(node.id)}
         fitView
         fitViewOptions={{ padding: 0.1 }}
+        onlyRenderVisibleElements={resources.length > 150}
         minZoom={0.25}
         maxZoom={1.75}
         nodesConnectable={false}
