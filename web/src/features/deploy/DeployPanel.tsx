@@ -32,6 +32,8 @@ interface Props {
   error: string;
   running: boolean;
   hasUnsaved: boolean;
+  /** .tf.json files of the project: Floci leaves them out of the copy. */
+  jsonFiles: string[];
   resourceCount: number;
   onRun: (
     action: FlociJob["action"],
@@ -46,6 +48,7 @@ export function DeployPanel({
   error,
   running,
   hasUnsaved,
+  jsonFiles,
   resourceCount,
   onRun,
   onCancel,
@@ -140,6 +143,13 @@ export function DeployPanel({
         <p className="field-note deploy-warning">
           <TriangleAlert size={13} /> Hay borradores sin guardar. El plan usa la
           última versión guardada.
+        </p>
+      )}
+      {jsonFiles.length > 0 && (
+        <p className="field-note deploy-warning" data-testid="floci-json">
+          <TriangleAlert size={13} /> Floci omite{" "}
+          {jsonFiles.length === 1 ? "el archivo" : "los archivos"}{" "}
+          {jsonFiles.join(", ")}: el plan solo usa los archivos .tf.
         </p>
       )}
       {error && (

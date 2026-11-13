@@ -945,6 +945,9 @@ export default function App() {
                 error={floci.error}
                 running={floci.running}
                 hasUnsaved={hasUnsaved}
+                jsonFiles={project.files
+                  .map((f) => f.path)
+                  .filter((path) => path.endsWith(".tf.json"))}
                 resourceCount={
                   project.resources.filter((r) => r.block === "resource").length
                 }

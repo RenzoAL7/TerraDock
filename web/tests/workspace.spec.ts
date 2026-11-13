@@ -670,6 +670,20 @@ test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   await expect(
     page.getByRole("button", { name: "Aplicar plan", exact: true }),
   ).toBeDisabled();
+  // The example has no .tf.json: nothing to warn about.
+  await expect(page.getByTestId("floci-json")).toHaveCount(0);
+});
+
+test("la pestaña Floci avisa de que omite los .tf.json", async ({ page }) => {
+  await page.goto("/");
+  await openLocalFolder(page, {
+    "main.tf": localSource,
+    "extra.tf.json": '{"variable": {"region": {"default": "us-east-1"}}}',
+  });
+  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await expect(page.getByTestId("floci-json")).toContainText(
+    "Floci omite el archivo extra.tf.json",
+  );
 });
 
 test("solo la pestaña Floci consulta /api/floci", async ({ page }) => {
