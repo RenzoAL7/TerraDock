@@ -53,19 +53,19 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 
 ## Fuera de esta entrega
 
-- Ejecución de `terraform init`, `validate`, `plan`, `apply` o `destroy`.
-- Importación o comparación de planes y estados Terraform.
+- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci, desde su pestaña y sobre una copia privada (ver el [README](../README.md#desplegar-en-local-con-floci-opcional)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
+- Importar un plan JSON arbitrario o comparar atributos con un estado Terraform. El plan generado contra Floci sí se muestra sobre el diagrama.
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
 - Integración Git, colaboración multiusuario y sincronización en la nube.
-- Binarios de release, instaladores y actualizaciones automáticas.
-- Certificación de funcionamiento en Windows y Linux de escritorio, benchmark de 300 recursos y pruebas con múltiples usuarios.
+- Instaladores, firma de código y actualizaciones automáticas. Los binarios autocontenidos para ARM64 y AMD64 en macOS, Linux y Windows ya se construyen (`make package` y el workflow Binarios), pero no están firmados: macOS y Windows muestran un aviso la primera vez. Los archivos aparecen cuando se publica un release (etiqueta `v*`); si los enlaces todavía no descargan nada, aún no hay ninguno publicado y hay que compilar desde el código.
+- Certificación de funcionamiento en Windows y Linux de escritorio y pruebas con múltiples usuarios. La sincronización con 300 recursos sí está medida: el p95 queda por debajo de 1 s en una MacBook ARM con Chromium (ver [rendimiento](performance.md)), pero no en otras máquinas ni sistemas.
 
 ## Ejecución local
 
 Go sirve la aplicación en loopback y la raíz elegida delimita el acceso a proyectos. No está diseñada para exponer el puerto a Internet ni para operar como un servicio multiusuario. El frontend y Monaco forman parte de los assets locales compilados.
 
-En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. La instalación de nuevas dependencias y las futuras operaciones Terraform tendrán contextos de red distintos del análisis de archivos.
+En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. Abrir, analizar y editar no ejecutan Terraform ni contactan Floci. Solo la pestaña Floci, mientras está visible o hay una operación en curso, consulta el emulador y lee una vez la versión de Terraform. El endpoint debe ser de loopback o `*.floci.io` (debe resolver a tu equipo). Plan, aplicar, destruir y «Leer estado» ejecutan `terraform init`, que necesita red para descargar providers la primera vez en cada proyecto, y «Iniciar Floci» puede descargar la imagen Docker del emulador si falta. Terraform y la CLI de Floci se ejecutan sin las variables `AWS_*` del usuario y con `CHECKPOINT_DISABLE=1`. De las variables `TF_*`, en plan, aplicar, destruir y «Leer estado» solo se respetan `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*`, para usar mirrors de providers y registros privados. Se ignoran todas las demás, entre ellas `TF_VAR_*` (las variables se leen de los `tfvars` del proyecto o del panel), `TF_DATA_DIR`, `TF_WORKSPACE`, `TF_LOG` y `TF_PLUGIN_CACHE_DIR` (TerraDock usa su propia caché). `terraform version` y `floci start` no reciben ninguna.
 
 ## Estado del roadmap
 

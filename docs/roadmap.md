@@ -21,7 +21,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 | Área | Estado |
 | --- | --- |
 | Núcleo técnico (fase 1) | Completo: parser HCL, modelo vinculado a la fuente, edición de literales preservando bytes y detección de cambios externos. |
-| IDE local (fase 2) | Mayormente completo. Faltan proyectos recientes, apertura automática del navegador y la gestión de archivos (crear, renombrar, eliminar). |
+| IDE local (fase 2) | Mayormente completo. Faltan proyectos recientes y la gestión de archivos (crear, renombrar, eliminar). |
 | Edición bidireccional (fase 3) | Núcleo completo y **en tiempo real**: código → diagrama mientras se escribe, inspector → código al instante, archivo externo → diagrama con eventos nativos y autoguardado de HCL válido con control de revisión. Falta el historial, la comparación de conflictos y la recuperación tras una interrupción. |
 | Proyectos habituales (fase 4) | Pendiente. Solo se leen los `tfvars` del proyecto para Floci. |
 | Planes (fase 6) | Parcial por otra vía: el plan generado contra Floci se muestra sobre el diagrama. Todavía no se importa un JSON arbitrario. |
@@ -36,7 +36,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Flujo principal: iniciar programa → navegador local → Abrir carpeta → código y arquitectura → editar → guardar → sincronizar.
 - [ ] Un proyecto activo por sesión al principio; proyectos recientes para cambiar de carpeta.
 - [x] Selector de carpetas dentro de la interfaz, respaldado por Go, con opción de pegar una ruta.
-- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco, React Flow y layout automático cuando sea necesario.
+- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco y React Flow. El diagrama coloca los nodos en una rejilla fija; un motor de layout automático queda pendiente para cuando sea necesario.
 - [x] Definir la política de guardado. Decisión: cambios en vivo y autoguardado de borradores con HCL válido (desactivable), además de Guardar/Ctrl-S/Cmd-S. El diagrama refleja el borrador y los borradores se indican explícitamente.
 - [ ] Diseñar pantalla inicial, explorador, pestañas, vista dividida, inspector, panel de problemas y estados.
 - [ ] Definir por separado lectura de código, representación especializada y edición visual de propiedades.
@@ -71,8 +71,9 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 
 **Funcionalidades**
 
-- [x] Un programa sirve frontend y API en el mismo puerto local. Pendiente: abrir el navegador automáticamente.
-- [ ] Puerto configurable, mensaje claro si está ocupado e instrucciones de inicio y cierre.
+- [x] Un programa sirve frontend y API en el mismo puerto local. Los binarios de release llevan el frontend incrustado (`web/embed.go`) y abren el navegador al arrancar (`--open`).
+- [x] Puerto configurable con `--port` (las pruebas de navegador usan el 7332) e instrucciones de inicio y cierre en el README.
+- [ ] Mensaje claro si el puerto está ocupado. Hoy se muestra el error del sistema operativo.
 - [ ] Botón Abrir carpeta, navegación de directorios, ruta manual y proyectos recientes.
 - [ ] Detectar ausencia de archivos Terraform en la carpeta, permisos insuficientes y carpetas con varios entornos; permitir elegir la raíz adecuada.
 - [ ] Explorador con archivos y carpetas, búsqueda de archivos y apertura en pestañas.
@@ -81,7 +82,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Vistas Arquitectura, Código y Dividida.
 - [x] Navegación de nodo a declaración y de declaración a nodo. En la vista dividida, el cursor selecciona el recurso y el nodo resalta su bloque.
 - [ ] Inspector con valor o expresión, ubicación de origen y motivo cuando una propiedad no es editable visualmente.
-- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y layout.
+- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y colocación en rejilla fija (sin layout automático).
 - [x] Estados separados: borrador sin guardar, guardando, sincronizado, analizando, gráfico desactualizado y validación.
 - [x] Panel de problemas con archivo, línea y explicación.
 
@@ -211,7 +212,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [ ] Templates con variables de entrada, supuestos, instrucciones y versiones de proveedores compatibles.
 - [ ] Previsualización de archivos y creación en un directorio nuevo; conflictos de nombres gestionados.
 - [ ] Verificación sintáctica y validación Terraform en el proceso de publicación de templates; indicar requisitos pendientes y no afirmar despliegue probado sin evidencia.
-- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente y demo; falta la descarga de binarios.
+- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente, demo y una sección de descarga que apunta al último release de GitHub. Esos enlaces tienen archivos a partir del primer release (etiqueta `v*`).
 - [x] Demo con archivos de ejemplo en memoria, reinicio y las mismas restricciones de edición.
 - [x] Validar cómo compartir el núcleo de análisis y edición en la demo, por ejemplo mediante una prueba de WebAssembly. No crear un segundo parser con comportamiento diferente.
 - [x] Mantener la demo independiente de las carpetas del visitante y del servicio local.
@@ -224,9 +225,9 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 
 **Entrega y calidad**
 
-- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad.
+- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad. Implementado: `make package` y el workflow Binarios generan los 6 archivos (macOS, Linux y Windows; ARM64 y AMD64) con `checksums.txt` al publicar una etiqueta `v*`. Queda verificar el primer release publicado en cada sistema.
 - [ ] Instalación, actualización, reversión y desinstalación documentadas.
-- [ ] Arranque con una orden y apertura automática opcional del navegador; opción de abrir una ruta directamente.
+- [ ] Arranque con una orden y apertura automática opcional del navegador; opción de abrir una ruta directamente. Hecho: arranque con una orden (`terradock`) y apertura del navegador desactivable con `--open=false`. Falta abrir un proyecto directamente al iniciar.
 - [ ] Funcionamiento básico sin Terraform, credenciales AWS ni conexión a Internet después de instalar.
 - [x] Frontend y recursos servidos localmente, sin dependencias externas necesarias para editar.
 - [x] Servidor limitado a loopback; sesión y comprobación de origen/host para operaciones sensibles.
@@ -237,7 +238,7 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 - [ ] Documentación de compatibilidad, limitaciones, solución de problemas y recuperación.
 - [ ] CI y regresiones de parser, escritor, sincronización, interfaz, planes y reglas. Existe CI con pruebas Go, unitarias, de navegador y de la portada, imágenes ARM64 con promoción automática y monitor del sitio; faltan las regresiones de planes importados.
 - [ ] Pruebas en máquinas limpias y sesiones con usuarios distintos del autor.
-- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales.
+- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales. Medido en una MacBook ARM con Chromium: p95 de 50–159 ms con 300 recursos según el camino ([rendimiento](performance.md)). Faltan otras máquinas, la apertura y la navegación.
 - [ ] Cero incidencias conocidas de pérdida de datos y cero bloqueos abiertos en los flujos de lanzamiento.
 
 **Terminado cuando:** una persona instala la versión publicada, abre un proyecto compatible, completa los flujos principales, cierra y vuelve a abrir sin asistencia del autor. La evidencia de pruebas y la matriz de soporte acompañan la publicación.
@@ -276,11 +277,11 @@ La evaluación completa de IAM, estimación de costos, otros proveedores, colabo
 
 ## Orden de trabajo inmediato
 
-1. Medir la sincronización en tiempo real con proyectos grandes (objetivo de la fase 9: refresco por debajo de un segundo, hasta 300 bloques) y optimizar el análisis incremental si hace falta.
+1. Hecho: la sincronización con 300 recursos queda por debajo de un segundo ([rendimiento](performance.md)). Falta repetir la medición en otras máquinas y sistemas.
 2. Cerrar la fase 3: comparación de versiones en conflicto, recuperación de borradores tras cerrar o reiniciar, y archivos creados, renombrados o eliminados externamente.
 3. Completar V8: detectar antes de aplicar los tipos y servicios que Floci no emula (por ejemplo `t3.large`) y comparar atributos con el estado desplegado.
 4. Fase 4: variables, locals, outputs y módulos locales visibles en el diagrama.
-5. Fase 9: binarios ARM64 y AMD64 para macOS, Linux y Windows (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64), con frontend embebido en un único ejecutable y apertura del navegador.
+5. Fase 9: publicar un release (etiqueta `v*`) de los binarios ARM64 y AMD64 para macOS, Linux y Windows, ya implementados con frontend incrustado y apertura del navegador (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64). Después, firma de código, actualización y desinstalación documentadas.
 
 No se asignan fechas antes de validar el núcleo técnico. Las estimaciones se harán con evidencia de esa prueba y la disponibilidad real de trabajo.
 

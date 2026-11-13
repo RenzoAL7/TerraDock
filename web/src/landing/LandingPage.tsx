@@ -6,6 +6,7 @@ import {
   Download as DownloadIcon,
   FileCode2,
   FolderOpen,
+  GitBranch,
   Layers3,
   LockKeyhole,
   Network,
@@ -41,12 +42,12 @@ function Header() {
             Documentación <ArrowUpRight size={13} aria-hidden="true" />
           </a>
         </nav>
-        <button className="access-button" disabled>
-          <LockKeyhole size={15} aria-hidden="true" />
+        <a className="source-link" href={repository}>
+          <GitBranch size={15} aria-hidden="true" />
           <span>
-            Acceso <span className="coming-soon">Próximamente</span>
+            Código abierto <span className="source-license">Licencia MIT</span>
           </span>
-        </button>
+        </a>
       </div>
     </header>
   );
@@ -82,7 +83,7 @@ function HowItWorks() {
         <p className="eyebrow">CÓMO FUNCIONA</p>
         <h2 id="how-title">Entiende antes de cambiar.</h2>
         <p>
-          El recorrido de la demo local, desde el archivo hasta su arquitectura.
+          El recorrido de la app local, desde el archivo hasta su arquitectura.
         </p>
       </div>
       <ol className="steps">
@@ -126,16 +127,16 @@ const currentFeatures = [
 
 const plannedFeatures = [
   {
-    title: "Cuentas y proyectos privados",
-    text: "Acceso personal y espacios de trabajo persistentes en la web.",
+    title: "Borradores recuperables",
+    text: "Recuperar los cambios sin guardar después de cerrar el navegador o reiniciar el equipo.",
   },
   {
-    title: "Integración con GitHub",
-    text: "Conectar repositorios y proponer cambios mediante pull requests.",
+    title: "Variables y módulos",
+    text: "Variables, locals, outputs y módulos locales visibles en el diagrama.",
   },
   {
-    title: "Plan y apply en la nube",
-    text: "Revisar y autorizar ejecuciones de Terraform contra cuentas reales.",
+    title: "Crear recursos desde el diagrama",
+    text: "Añadir y eliminar recursos compatibles, con vista previa del cambio en el código.",
   },
 ];
 
@@ -152,8 +153,9 @@ function Features() {
           <p className="eyebrow">FUNCIONES Y ALCANCE</p>
           <h2 id="features-title">Una base real. Un camino por delante.</h2>
           <p>
-            La demo funciona en tu equipo. La aplicación web se construye por
-            etapas.
+            TerraDock se ejecuta en tu equipo: sin cuentas, sin servicio alojado
+            y sin subir tus archivos. Esta web solo presenta el proyecto y una
+            demo.
           </p>
         </div>
         <div className="feature-columns">
@@ -186,7 +188,7 @@ function Features() {
           <div className="feature-group planned-features">
             <div className="feature-group-heading">
               <span className="availability-label future-label">
-                Próximamente en la web
+                En el roadmap
               </span>
               <Layers3 size={21} aria-hidden="true" />
             </div>
@@ -202,8 +204,15 @@ function Features() {
               ))}
             </ul>
             <p className="planned-note">
-              Funciones previstas; todavía no están disponibles.
+              Funciones previstas para la app local; todavía no están
+              disponibles.
             </p>
+            <a
+              className="text-link"
+              href={`${repository}/blob/main/docs/roadmap.md`}
+            >
+              Ver roadmap <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
           </div>
         </div>
       </div>

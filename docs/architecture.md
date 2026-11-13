@@ -12,15 +12,19 @@ flowchart LR
   API --> FS[Archivos de la raíz permitida]
   Parser --> Model[Modelo con rangos y referencias]
   Model --> UI
+  API -. pestaña Floci .-> Runner[Ejecutor Terraform]
+  Runner --> Floci[Emulador Floci local]
 ```
 
 ## Responsabilidades
 
 | Capa | Responsabilidad | Límite |
 | --- | --- | --- |
-| `cmd/terradock` | Opciones de arranque y servidor HTTP | No contiene lógica de interpretación |
-| `internal/` | Modelo, interpretación, acceso al proyecto y API | No ejecuta Terraform ni consulta AWS |
+| `cmd/terradock` | Opciones de arranque, servidor HTTP y apertura del navegador (`--open`) | No contiene lógica de interpretación |
+| `internal/` | Modelo, interpretación, acceso al proyecto y API | Abrir, analizar y editar no ejecutan Terraform ni contactan AWS ni Floci |
+| `internal/floci` | Estado del emulador y `terraform plan`, `apply` y `destroy` contra Floci, solo desde su pestaña | Endpoint de loopback o `*.floci.io` (debe resolver a tu equipo); copia privada; sin las variables `AWS_*` del usuario y, de las `TF_*`, solo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*`. `terraform init` descarga providers la primera vez en cada proyecto y `floci start` puede descargar su imagen Docker |
 | `web/src/` | Navegación, borradores, editor, canvas e inspector | El diagrama se deriva del modelo interpretado |
+| `web/embed.go` | Incrusta `web/dist` en el ejecutable con la etiqueta de build `embed` | Sin esa etiqueta (`web/noembed.go`), el frontend se lee de `--assets` |
 | `examples/` | Entradas didácticas para probar el flujo | No son un despliegue verificado |
 | `web/tests/` | Escenarios de usuario sobre servicios locales | No validan recursos en AWS |
 
@@ -50,9 +54,14 @@ En modo local, `--root` delimita el espacio accesible. Abrir una carpeta selecci
 | `POST /api/open` | `path`: carpeta del módulo raíz |
 | `PUT /api/files` | `projectId`, `path`, `content`, `expectedRevision` |
 | `PATCH /api/properties` | `projectId`, `resourceId`, `property`, `value`, `expectedRevision` |
+| `POST /api/analyze` | `projectId`, `files` (ruta → contenido del borrador); devuelve recursos, relaciones y diagnósticos sin escribir |
+| `POST /api/edit-draft` | `projectId`, `path`, `content`, `resourceId`, `property`, `value`; devuelve el `content` editado sin escribir |
+| `GET /api/floci` | Estado: endpoint, si el emulador responde, Terraform detectado y su versión, trabajo actual, plan, recursos desplegados y variables |
+| `POST /api/floci/run` | `action` (`start`, `plan`, `apply`, `destroy` o `refresh`), `projectId`, `variables`; responde `202` con el trabajo, `409 floci_error` si hay otro en curso y `400 floci_error` ante una acción o un proyecto no válidos |
+| `POST /api/floci/cancel` | Cuerpo `{}`; cancela el trabajo en curso |
 | `GET /api/events` | Stream SSE con eventos `project` y snapshots completos |
 
-La revisión esperada corresponde al hash del archivo de origen, también para editar una propiedad. El servidor verifica `projectId` bajo el mismo bloqueo que el guardado; una operación destinada al proyecto anterior recibe `409 project_conflict`, incluso cuando los dos proyectos contienen archivos con el mismo nombre y contenido. Una revisión obsoleta recibe `409 revision_conflict`. Las respuestas de error incluyen `code` y `error`.
+`cmd/terradock` siempre crea el ejecutor de Floci; las rutas de Floci solo responden `503 floci_unavailable` cuando el servidor se construye sin él, como en algunas pruebas. La revisión esperada corresponde al hash del archivo de origen, también para editar una propiedad. El servidor verifica `projectId` bajo el mismo bloqueo que el guardado; una operación destinada al proyecto anterior recibe `409 project_conflict`, incluso cuando los dos proyectos contienen archivos con el mismo nombre y contenido. Una revisión obsoleta recibe `409 revision_conflict`. Las respuestas de error incluyen `code` y `error`.
 
 ## Orden de actualizaciones y borradores
 
@@ -64,20 +73,28 @@ El servidor comparte un proyecto activo entre sus pestañas. Los borradores pert
 
 Los borradores se analizan sin escribir en disco: `POST /api/analyze` recibe el contenido de los archivos con cambios y devuelve recursos, relaciones y diagnósticos, y `POST /api/edit-draft` aplica un literal del inspector sobre el texto del borrador. Ambos usan el mismo parser y editor que el guardado. El autoguardado del cliente persiste el borrador con `PUT /api/files` cuando la vista previa confirma que el HCL es válido, con la misma comprobación de revisión que un guardado manual.
 
-El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de trabajo, ubicada en la caché del usuario, que contiene los archivos guardados, los `tfvars` del proyecto y los archivos de override del provider `aws` y del backend `local`. El entorno del proceso no incluye las variables `AWS_*` ni `TF_*` del usuario. «Aplicar» solo ejecuta el archivo de plan generado para la misma huella de archivos.
+El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de trabajo, ubicada en la caché del usuario, que contiene los archivos guardados, los `tfvars` del proyecto y los archivos de override del provider `aws` y del backend `local`. El entorno del proceso no incluye las variables `AWS_*` del usuario ni sus `TF_*`, salvo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*` (mirrors y registros privados), y fija `CHECKPOINT_DISABLE=1`. `floci start` y `terraform version` reciben el entorno saneado sin ninguna `TF_*`. «Aplicar» solo ejecuta el archivo de plan generado para la misma huella de archivos.
+
+El cliente solo pide `GET /api/floci` mientras la pestaña Floci está visible o hay una operación en curso, para que plan, aplicar y destruir sigan actualizando el diagrama aunque se salga de la pestaña. Ese estado comprueba si el endpoint responde y, una vez por proceso y fuera del bloqueo del ejecutor, lee `terraform version -json`; no se reintenta si falla. Como el estado no se refresca siempre, el diagrama no muestra marcas de un estado leído para otro proyecto y descarta las de un plan leído para una revisión guardada anterior.
 
 ## Desarrollo y build
 
 Durante el desarrollo, Vite sirve el frontend en `127.0.0.1:5173` y reenvía la API al proceso Go en `127.0.0.1:7331`. `make dev-api` permite el origen exacto de Vite mediante `--dev-origin`; esa excepción es opcional y no se necesita para el build. Durante la ejecución del build, Go sirve los archivos de `web/dist` y la API desde un mismo puerto. Monaco y sus workers se incluyen en la compilación del frontend.
 
-La distribución inicial consiste en un ejecutable y un directorio de assets. El empaquetado de un único archivo, los instaladores y las actualizaciones automáticas son trabajo posterior.
+Hay dos formas de ejecutable:
+
+- `make build` genera `bin/terradock`, que lee el frontend de `web/dist` (o de la ruta indicada con `--assets`). Es la forma que usan el desarrollo y las pruebas de navegador.
+- `make package` (`scripts/package.sh`) compila con `-tags embed` un binario autocontenido por plataforma (macOS, Linux y Windows; ARM64 y AMD64) con el frontend incrustado, y genera `checksums.txt`. Ese binario abre el navegador al arrancar (`--open`, activo por defecto cuando el frontend va incrustado). Si se pasa `--assets`, usa esa carpeta en lugar de la copia incrustada.
+
+El workflow [Binarios](../.github/workflows/release.yml) ejecuta `make package` en un runner ARM, prueba el binario linux/arm64 y crea el release en GitHub al publicar una etiqueta `v*`. Los archivos aparecen cuando se publica un release (etiqueta `v*`); si los enlaces todavía no descargan nada, aún no hay ninguno publicado y hay que compilar desde el código. Los instaladores, la firma de código y las actualizaciones automáticas son trabajo posterior.
 
 ## Decisiones deliberadas
 
 - La interfaz corre en el navegador para evitar un runtime de escritorio adicional.
 - Go comparte la responsabilidad del servidor y el análisis HCL para mantener las operaciones de archivos fuera del navegador.
 - El diseño visual y el código se sincronizan mediante un modelo común con origen verificable.
-- El estado de despliegue, la importación de planes y las operaciones Terraform quedan fuera de esta entrega.
+- Terraform solo se ejecuta desde la pestaña Floci: una vez para leer su versión cuando se abre la pestaña, y al pulsar plan, aplicar, destruir o «Leer estado», siempre contra el emulador local. Abrir una carpeta, analizar o editar nunca lo ejecuta.
+- La importación de planes JSON arbitrarios y la ejecución contra cuentas AWS reales quedan fuera de esta entrega.
 - Se publica compatibilidad parcial antes de ampliar recursos o evaluación semántica.
 
 Referencias técnicas: [HCL](https://github.com/hashicorp/hcl), [módulos Terraform](https://developer.hashicorp.com/terraform/language/files), [Monaco Editor](https://github.com/microsoft/monaco-editor) y [React Flow](https://reactflow.dev/).

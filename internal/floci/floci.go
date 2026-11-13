@@ -119,8 +119,12 @@ type Runner struct {
 	plans    map[string]*Plan
 	deployed map[string][]string
 	values   map[string]map[string]string // project → variable values (memory only)
-	version  string
 	seq      int
+
+	// The Terraform version is read at most once, outside mu, so a slow or
+	// failing binary never blocks status, cancel or job logging.
+	versionOnce sync.Once
+	version     string
 }
 
 var hostPattern = regexp.MustCompile(`(?i)^[a-z0-9-]+\.floci\.io$`)
@@ -199,6 +203,7 @@ func (r *Runner) Status(ctx context.Context) Status {
 	project := r.source()
 	projectID, files := project.ID, project.Files
 	variables := Variables(files, ReadTFVars(project.Dir))
+	status.TerraformVersion = r.terraformVersion()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i := range variables {
@@ -207,10 +212,6 @@ func (r *Runner) Status(ctx context.Context) Status {
 		}
 	}
 	status.Variables = variables
-	if r.version == "" && r.cfg.Terraform != "" {
-		r.version = terraformVersion(r.cfg.Terraform)
-	}
-	status.TerraformVersion = r.version
 	if r.job != nil {
 		job := *r.job
 		job.Log = append([]string(nil), r.job.Log...)
@@ -227,10 +228,24 @@ func (r *Runner) Status(ctx context.Context) Status {
 	return status
 }
 
-func terraformVersion(binary string) string {
+// terraformVersion runs `terraform version -json` once per Runner, with the
+// sanitized tool environment (no AWS_* or TF_* from the user, checkpoint
+// disabled). An empty result is cached too: the binary is not retried.
+func (r *Runner) terraformVersion() string {
+	r.versionOnce.Do(func() {
+		if r.cfg.Terraform != "" {
+			r.version = terraformVersion(r.cfg.Terraform, r.toolEnvironment())
+		}
+	})
+	return r.version
+}
+
+func terraformVersion(binary string, env []string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, binary, "version", "-json").Output()
+	cmd := exec.CommandContext(ctx, binary, "version", "-json")
+	cmd.Env = env
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -357,7 +372,7 @@ func (r *Runner) execute(ctx context.Context, job *Job, project Project, vars ma
 	name, files := project.Name, project.Files
 	if job.Action == "start" {
 		r.logf(job, "$ floci start")
-		return r.command(ctx, job, "", r.cfg.Floci, nil, "start")
+		return r.command(ctx, job, "", r.cfg.Floci, r.toolEnvironment(), "start")
 	}
 	dir := filepath.Join(r.cfg.StateDir, safeName(job.ProjectID))
 	layout, err := Stage(dir, files, r.cfg.Endpoint, ReadTFVars(project.Dir), vars)
@@ -414,23 +429,47 @@ func (r *Runner) execute(ctx context.Context, job *Job, project Project, vars ma
 	return r.readState(ctx, job.ProjectID, dir, env)
 }
 
-func (r *Runner) environment(dir string) []string {
+// toolEnvironment is the user's environment without AWS_* or TF_* variables,
+// so real credentials, profiles or endpoints never reach a child process.
+// CHECKPOINT_DISABLE stops Terraform's update check from calling HashiCorp.
+func (r *Runner) toolEnvironment() []string {
 	env := make([]string, 0, len(os.Environ())+12)
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
 		upper := strings.ToUpper(key)
-		// Never let real credentials, profiles or endpoints reach the run.
 		if strings.HasPrefix(upper, "AWS_") || strings.HasPrefix(upper, "TF_") {
 			continue
 		}
 		env = append(env, kv)
 	}
+	return append(env, "CHECKPOINT_DISABLE=1")
+}
+
+// registryVariable reports the TF_* variables kept for Terraform runs: the CLI
+// configuration file and registry tokens, so provider mirrors and private
+// registries keep working. Every other TF_* (TF_VAR_*, TF_DATA_DIR,
+// TF_WORKSPACE, TF_LOG…) is dropped.
+func registryVariable(key string) bool {
+	upper := strings.ToUpper(key)
+	return upper == "TF_CLI_CONFIG_FILE" || strings.HasPrefix(upper, "TF_TOKEN_")
+}
+
+// environment is the Terraform run environment: the sanitized environment,
+// the user's registry settings, and test credentials and endpoints that only
+// point at Floci.
+func (r *Runner) environment(dir string) []string {
 	missing := filepath.Join(dir, ".no-aws-config")
+	env := r.toolEnvironment()
+	for _, kv := range os.Environ() {
+		if key, _, _ := strings.Cut(kv, "="); registryVariable(key) {
+			env = append(env, kv)
+		}
+	}
 	return append(env,
 		"AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_REGION=us-east-1", "AWS_DEFAULT_REGION=us-east-1",
 		"AWS_ENDPOINT_URL="+r.cfg.Endpoint, "AWS_CONFIG_FILE="+missing, "AWS_SHARED_CREDENTIALS_FILE="+missing,
 		"AWS_EC2_METADATA_DISABLED=true",
-		"TF_IN_AUTOMATION=1", "TF_INPUT=0", "CHECKPOINT_DISABLE=1",
+		"TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"TF_PLUGIN_CACHE_DIR="+filepath.Join(r.cfg.StateDir, "plugin-cache"),
 	)
 }

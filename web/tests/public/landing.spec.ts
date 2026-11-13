@@ -80,8 +80,8 @@ test("explains availability and gives every link a real destination", async ({
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("button", { name: "Acceso Próximamente" }),
-  ).toBeDisabled();
+    page.getByRole("link", { name: "Código abierto Licencia MIT" }),
+  ).toHaveAttribute("href", "https://github.com/RenzoAL7/TerraDock");
   await expect(
     page.getByText("Ejemplo estático", { exact: true }),
   ).toBeVisible();
@@ -89,11 +89,37 @@ test("explains availability and gives every link a real destination", async ({
     page.getByText("Disponible en la app local", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Próximamente en la web", { exact: true }),
+    page.getByText("Despliegue local con Floci", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("En el roadmap", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Funciones previstas; todavía no están disponibles."),
+    page.getByText(
+      "Funciones previstas para la app local; todavía no están disponibles.",
+    ),
   ).toBeVisible();
+  // The roadmap column lists exactly the planned local features.
+  expect(
+    await page
+      .locator(".planned-features li h3")
+      .evaluateAll((items) => items.map((item) => item.textContent)),
+  ).toEqual([
+    "Borradores recuperables",
+    "Variables y módulos",
+    "Crear recursos desde el diagrama",
+  ]);
+  // TerraDock is a local tool: the site must not promise accounts,
+  // hosted workspaces or cloud execution.
+  const text = (await page.locator("body").innerText()).toLowerCase();
+  for (const phrase of [
+    "Iniciar sesión",
+    "Crear cuenta",
+    "Cuentas y proyectos",
+    "Integración con GitHub",
+    "Plan y apply en la nube",
+    "Próximamente",
+  ])
+    expect(text, phrase).not.toContain(phrase.toLowerCase());
+  await expect(page.locator("header").getByRole("button")).toHaveCount(0);
   await expect(
     page.locator("form, input, textarea, [contenteditable=true]"),
   ).toHaveCount(0);
@@ -116,7 +142,7 @@ test("explains availability and gives every link a real destination", async ({
       expect(await response.text()).toContain("Demo interactiva");
     } else {
       expect(href).toMatch(
-        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#|\/blob\/main\/docs\/limitations\.md$|\/releases\/latest(?:\/download\/terradock_(?:darwin|linux|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip))?$)|^https:\/\/floci\.io$/,
+        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#readme$|\/blob\/main\/docs\/(?:limitations|roadmap)\.md$|\/releases\/latest(?:\/download\/terradock_(?:darwin|linux|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip))?$)|^https:\/\/floci\.io$/,
       );
     }
   }

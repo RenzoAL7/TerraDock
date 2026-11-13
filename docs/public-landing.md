@@ -1,6 +1,6 @@
 # Página pública de TerraDock
 
-La portada presenta el producto, un ejemplo estático con código a la izquierda y arquitectura a la derecha, el recorrido de la demo local y las funciones web previstas. **Probar demo** abre una entrada interactiva independiente en `/demo/`; su [guía](browser-demo.md) explica las acciones disponibles. El acceso aparece deshabilitado y rotulado **Próximamente**. Los enlaces a GitHub llevan al repositorio y a su documentación, sin conectar una cuenta.
+La portada presenta el producto, un ejemplo estático con código a la izquierda y arquitectura a la derecha, el recorrido de la app local, la sección **Descargar** con los binarios de cada sistema (enlazan al último release de GitHub), sus funciones disponibles y las previstas en el [roadmap](roadmap.md). TerraDock es una herramienta local y open source (MIT), sin cuentas ni servicio alojado: la web es solo escaparate y demo. **Descargar** lleva a `#descargar` y **Probar demo** abre una entrada interactiva independiente en `/demo/`; su [guía](browser-demo.md) explica las acciones disponibles. La cabecera enlaza al código fuente. Los enlaces a GitHub llevan al repositorio y a su documentación, sin conectar una cuenta.
 
 La primera entrega cubrió los archivos locales, el build y las pruebas. La publicación posterior autorizada usa una imagen estática independiente y K3s; consulta [despliegue público](public-deployment.md). La portada no incluye cuentas ni ejecución de Terraform.
 
@@ -15,11 +15,7 @@ make public-build           # Compilación estática
 make public-preview         # Revisión del build: http://127.0.0.1:4174
 ```
 
-El comando directo de compilación es `npm --prefix web run build:public`. Compila el analizador a WebAssembly y construye las dos entradas React. El **único directorio de salida público es `web/dist-public/`**, con `index.html`, `demo/index.html` y `assets/`. En el checkout usado para esta entrega corresponde a:
-
-```text
-/Users/renzo/Documents/ChatGPT/TerraFlow/TerraDock/web/dist-public/
-```
+El comando directo de compilación es `npm --prefix web run build:public`. Compila el analizador a WebAssembly y construye las dos entradas React. El **único directorio de salida público es `web/dist-public/`**, con `index.html`, `demo/index.html` y `assets/`, relativo a la raíz del checkout.
 
 Se puede servir ese directorio con un servidor HTTP estático, sin instalar Go, Terraform o variables de entorno en el servidor. El analizador compilado se descarga únicamente al entrar en la demo. `make public-preview` sirve ese mismo build con Vite en loopback; es una previsualización local, no una publicación. Para detenerla usa `Ctrl+C`.
 
@@ -29,7 +25,8 @@ Se puede servir ese directorio con un servidor HTTP estático, sin instalar Go, 
 
 ## Componentes y recursos
 
-- `LandingPage.tsx`: navegación, explicación, cómo funciona, capacidades actuales y futuras, enlaces y pie de página.
+- `LandingPage.tsx`: navegación, explicación, cómo funciona, capacidades actuales y previstas en el roadmap, enlaces y pie de página.
+- `Download.tsx`: sección `#descargar`, con un enlace por sistema y arquitectura al último release de GitHub (`releases/latest/download/…`), pasos después de descargar y requisitos. Marca el sistema detectado por el navegador; no descarga nada por sí misma.
 - `EditorExample.tsx`: muestra didáctica de tres recursos declarados. No importa Monaco, React Flow ni el cliente de la API. El HCL es un fragmento ilustrativo, no una configuración preparada para ejecutar.
 - `styles.css`: sistema visual y adaptación a escritorio, tablet y móvil.
 - Manrope, IBM Plex Mono e iconos: dependencias ya existentes, empaquetadas localmente. Las licencias de las fuentes se incluyen en el build y están enlazadas en el pie de página. No se añadieron dependencias ni recursos de CDN.
@@ -58,6 +55,6 @@ git diff --check
 
 `make public-e2e` necesita Chromium (`make e2e-install` si no está instalado). Sirve el build estático en `127.0.0.1:4174` y comprueba también la entrada de desarrollo en `127.0.0.1:5174`; no arranca el servidor Go. Ambos puertos deben estar libres. Las regresiones de la app local usan el puerto 7332 y una configuración separada para no mezclar la API local con la portada.
 
-La suite pública comprueba ausencia de llamadas `/api`, recursos externos, errores de navegador, cookies o almacenamiento local; disponibilidad de fuentes y assets; 404 en rutas privadas; destinos de enlaces; estado futuro del acceso; navegación por teclado; ausencia de desbordamiento de página y disposición izquierda/derecha en 320, 390, 601, 768, 1024 y 1440 px. La demo añade edición de código/propiedades, actualización de relaciones, errores HCL, exportación, reinicio y recuperación tras un fallo de carga. Produce capturas en `web/test-results/public/` y un informe en `web/playwright-report/public/`, ambos ignorados por Git.
+La suite pública comprueba ausencia de llamadas `/api`, recursos externos, errores de navegador, cookies o almacenamiento local; disponibilidad de fuentes y assets; 404 en rutas privadas; destinos de enlaces; ausencia de botones de acceso y de promesas de cuentas o ejecución en la nube; navegación por teclado; ausencia de desbordamiento de página y disposición izquierda/derecha en 320, 390, 601, 768, 1024 y 1440 px. La demo añade edición de código/propiedades, actualización de relaciones, errores HCL, exportación, reinicio y recuperación tras un fallo de carga. Produce capturas en `web/test-results/public/` y un informe en `web/playwright-report/public/`, ambos ignorados por Git.
 
 Resultados y capturas revisadas: [validación inicial de la portada](public-landing-validation.md) y [publicación de la demo interactiva](deployment/interactive-demo.md).

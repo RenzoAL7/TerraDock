@@ -111,7 +111,7 @@ export default function App() {
   // Saved files + unsaved drafts, re-analyzed as you type.
   const urgentPreview = useRef(false);
   const live = useLivePreview(project, drafts, 60, urgentPreview);
-  const floci = useFloci(project?.id);
+  const floci = useFloci(project?.id, project?.revision, view === "deploy");
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
@@ -296,7 +296,11 @@ export default function App() {
       ),
   );
   const issues = live.diagnostics.length + live.findings.length;
-  const marks = deployMarks(floci.status, project.id);
+  const marks = deployMarks(
+    floci.status,
+    { projectId: project.id, revision: project.revision },
+    floci.read,
+  );
   const editorContent = file ? (draft?.content ?? file.content) : "";
   const linked =
     resource && file && resource.file === file.path
@@ -1016,9 +1020,18 @@ export default function App() {
               </li>
             </ol>
             <p>
-              Todo se sirve desde tu equipo. Esta preview no ejecuta Terraform
-              ni contacta proveedores cloud. Los módulos se muestran sin
-              expandir y <code>count</code>/<code>for_each</code> no se evalúan.
+              Todo se sirve desde tu equipo. Abrir una carpeta, analizar y
+              editar no ejecutan Terraform ni contactan proveedores cloud ni
+              Floci. Los módulos se muestran sin expandir y <code>count</code>/
+              <code>for_each</code> no se evalúan.
+            </p>
+            <p>
+              Solo la pestaña Floci, mientras está abierta o hay una operación
+              en curso, consulta el emulador local y la versión de Terraform.
+              Plan, aplicar, destruir y Leer estado ejecutan Terraform contra el
+              emulador: <code>terraform init</code> descarga providers la
+              primera vez en cada proyecto, e Iniciar Floci puede descargar su
+              imagen Docker si falta.
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus

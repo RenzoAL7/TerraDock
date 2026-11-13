@@ -518,6 +518,30 @@ test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   ).toBeDisabled();
 });
 
+test("solo la pestaña Floci consulta /api/floci", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", (entry) => {
+    if (new URL(entry.url()).pathname.startsWith("/api/floci"))
+      requests.push(entry.url());
+  });
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByTestId("resource-aws_instance.app_a")).toBeVisible();
+  // Opening the project and viewing the diagram never asks for Floci status,
+  // so the server never runs Terraform for it.
+  await page.clock.runFor(30_000);
+  expect(requests).toEqual([]);
+
+  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Arquitectura", exact: true }).click();
+  await expect(page.getByTestId("resource-aws_instance.app_a")).toBeVisible();
+  const seen = requests.length;
+  await page.clock.runFor(30_000);
+  expect(requests.length).toBe(seen);
+});
+
 test("descartar el borrador también descarta lo escrito en el inspector", async ({
   page,
 }) => {

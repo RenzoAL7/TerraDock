@@ -1,5 +1,7 @@
 # Validación de la portada pública
 
+> **Registro histórico.** Describe la portada tal como se revisó el 18 de octubre de 2026. Desde entonces se quitó el botón «Acceso · Próximamente», se añadió la sección de descarga y cambiaron las funciones previstas. La descripción vigente está en [la página pública](public-landing.md).
+
 Revisión local del 18 de octubre de 2026 (America/Lima), en la rama `codex/landing-publica`, basada en `origin/main` (`ff839ce`). El checkout estaba limpio antes de comenzar. Remoto verificado: `https://github.com/RenzoAL7/TerraDock.git`.
 
 ## Resultado

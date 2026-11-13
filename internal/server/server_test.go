@@ -14,6 +14,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/RenzoAL7/TerraDock/internal/floci"
+	"github.com/RenzoAL7/TerraDock/internal/floci/flocitest"
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
 )
 
@@ -350,6 +352,36 @@ func TestHTTPLivePreviewAndDraftEditNeverWrite(t *testing.T) {
 	// Mutating previews still require the session token.
 	api.token = ""
 	assertStatus(t, api.request(t, "POST", "/api/analyze", bodyJSON(t, map[string]any{"projectId": initial.ID}), nil), http.StatusForbidden)
+}
+
+func TestHTTPOpeningAndAnalyzingNeverRunTerraform(t *testing.T) {
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "real-secret")
+	dir := t.TempDir()
+	terraformLog, flociLog := filepath.Join(dir, "terraform.log"), filepath.Join(dir, "floci.log")
+	runner, err := floci.New(floci.Config{
+		StateDir:  t.TempDir(),
+		Endpoint:  "http://127.0.0.1:1",
+		Terraform: flocitest.FakeTool(t, "terraform", terraformLog, "", `{"terraform_version":"1.9.8"}`, 0),
+		Floci:     flocitest.FakeTool(t, "floci", flociLog, "", "", 0),
+	}, func() floci.Project { return floci.Project{ID: "p"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runner.Close)
+	api := setupAPI(t, Options{Floci: runner})
+	initial := projectFrom(t, api.request(t, "POST", "/api/open", bodyJSON(t, map[string]string{"path": api.root}), nil))
+	assertStatus(t, api.request(t, "POST", "/api/analyze", bodyJSON(t, map[string]any{"projectId": initial.ID, "files": map[string]string{"main.tf": testSource}}), nil), http.StatusOK)
+	assertStatus(t, api.request(t, "POST", "/api/edit-draft", bodyJSON(t, map[string]any{"projectId": initial.ID, "path": "main.tf", "content": testSource, "resourceId": "aws_vpc.main", "property": "cidr_block", "value": "10.1.0.0/16"}), nil), http.StatusOK)
+	assertStatus(t, api.request(t, "GET", "/api/project", "", nil), http.StatusOK)
+	if calls := flocitest.Invocations(terraformLog) + flocitest.Invocations(flociLog); calls != 0 {
+		t.Fatalf("opening and analyzing ran Terraform or Floci %d times", calls)
+	}
+	// Only the Floci status endpoint asks Terraform for its version.
+	assertStatus(t, api.request(t, "GET", "/api/floci", "", nil), http.StatusOK)
+	if calls := flocitest.Invocations(terraformLog); calls != 1 {
+		t.Fatalf("status ran terraform %d times, want 1", calls)
+	}
+	flocitest.AssertSanitizedEnv(t, flocitest.ReadLog(terraformLog))
 }
 
 func TestHTTPFlociUnavailableWithoutRunner(t *testing.T) {

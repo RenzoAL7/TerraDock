@@ -77,7 +77,7 @@ Si Go no está en `PATH`, puedes indicar su ejecutable con `make check GO=/ruta/
 
 ## Integración continua
 
-El workflow [CI](../.github/workflows/ci.yml) corre en pull requests y pushes a `main` y `codex/**`. Usa permisos de solo lectura del repositorio y dos trabajos independientes: calidad/pruebas/build y flujos de navegador. El reporte Playwright se conserva durante siete días cuando está disponible.
+El workflow [CI](../.github/workflows/ci.yml) corre en pull requests, pushes a `main` y ejecuciones manuales. Usa permisos de solo lectura del repositorio y dos trabajos independientes: calidad/pruebas/build y flujos de navegador. El reporte Playwright se conserva durante siete días cuando está disponible.
 
 La existencia del workflow no implica que haya corrido en GitHub: la ejecución remota comienza al publicar la rama o abrir el pull request. Las comprobaciones locales verificadas deben indicarse en la descripción del cambio.
 
@@ -85,7 +85,7 @@ La existencia del workflow no implica que haya corrido en GitHub: la ejecución 
 
 ```text
 main
- └── codex/tema-concreto
+ └── feat/tema-concreto   (o fix/, docs/, ci/, perf/)
        ├── implementación y pruebas
        ├── revisión del diff
        └── pull request → CI → revisión → main
@@ -93,7 +93,7 @@ main
 
 Se mantiene una sola rama estable y ramas cortas por cambio. Las pruebas son parte de la rama de trabajo; no necesitan una rama permanente separada. Los tags de versión se reservan para entregas cuya compatibilidad y evidencia estén documentadas.
 
-La rama inicial de la demo es `codex/interactive-demo`. Los cambios se preparan localmente; publicar la rama y fusionarla son acciones separadas del desarrollo.
+Las ramas usan los prefijos `feat/`, `fix/`, `docs/`, `ci/` y `perf/` descritos en [CONTRIBUTING.md](../CONTRIBUTING.md). Los cambios se preparan localmente; publicar la rama y fusionarla son acciones separadas del desarrollo.
 
 ## Ampliar el producto
 

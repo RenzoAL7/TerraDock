@@ -31,6 +31,8 @@ TerraDock es un único archivo, sin instalador ni dependencias. Elige el de tu s
 
 Todas las versiones y sus sumas de verificación están en [Releases](https://github.com/RenzoAL7/TerraDock/releases).
 
+> Los archivos aparecen cuando se publica un release (etiqueta `v*`). Si los enlaces todavía no descargan nada, aún no hay ninguno publicado: [compila desde el código](#para-desarrolladores).
+
 **Después de descargar:**
 
 1. **Descomprime el archivo.** Dentro está el programa `terradock` (`terradock.exe` en Windows).
@@ -76,7 +78,7 @@ Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así 
 
 - **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones.
 - **Editar en ambos sentidos, en tiempo real.**
-  - Lo que escribes en el código actualiza el diagrama y el inspector en unos 60 ms.
+  - Lo que escribes en el código actualiza el diagrama y el inspector. El análisis arranca 60 ms después de la última tecla; con 300 recursos, el p95 medido hasta que el diagrama muestra el cambio es de unos 95 ms.
   - Lo que cambias en el inspector se escribe en el código al momento.
   - Si editas el archivo con otro programa (VS Code, vim…), el cambio aparece al instante.
 - **Navegar.** Al seleccionar un nodo se marca su bloque en el código. Al mover el cursor por el código se selecciona su nodo.
@@ -102,7 +104,11 @@ terradock
   - Los endpoints de Floci y las credenciales de prueba solo existen en esa copia.
   - Tus variables `AWS_*` reales se descartan.
 - Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo se guardan en memoria.
-- Solo se aceptan endpoints locales (`localhost`, `127.0.0.1` o `*.floci.io`). Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
+- Solo se aceptan endpoints de loopback (`localhost`, `127.0.0.1`…) o `*.floci.io`, que debe resolver a tu equipo. Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
+- **Cuándo se usa la red:** abrir una carpeta, ver el diagrama y editar no ejecutan Terraform ni contactan Floci.
+  - Solo mientras la pestaña Floci está visible, o mientras hay una operación en curso, TerraDock consulta cada pocos segundos si el emulador responde en su endpoint local. La primera vez también ejecuta `terraform version`, sin tus variables `AWS_*` ni `TF_*` y con `CHECKPOINT_DISABLE=1`, así que no consulta actualizaciones a HashiCorp.
+  - Plan, aplicar, destruir y «Leer estado» ejecutan `terraform init`, que descarga los providers del registro la primera vez en cada proyecto. Después se reutiliza la caché de plugins de TerraDock.
+  - «Iniciar Floci» ejecuta `floci start`, que puede descargar la imagen Docker del emulador si falta.
 
 ## Para desarrolladores
 
