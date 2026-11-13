@@ -51,7 +51,7 @@ La escritura atómica y la comprobación previa tienen límites frente a herrami
 
 Cuando un archivo cambia en disco mientras tiene un borrador, el editor muestra una comparación (disco a la izquierda, borrador a la derecha) con tres acciones:
 
-- **Conservar el mío** aplica tus cambios sobre la versión nueva del disco (fusión de tres vías por líneas) y la guarda con la revisión nueva. Solo ocurre si tus cambios y los externos no tocan las mismas líneas ni líneas contiguas; si las tocan, no se escribe nada y se abre el resultado con marcas `<<<<<<<`, `=======` y `>>>>>>>` para resolverlo a mano.
+- **Conservar el mío** aplica tus cambios sobre la versión nueva del disco (fusión de tres vías por líneas) y la guarda con la revisión nueva. Solo ocurre si tus cambios y los externos no tocan las mismas líneas ni líneas contiguas; si las tocan, no se escribe nada y se abre el resultado con marcas `<<<<<<<`, `=======` y `>>>>>>>` para resolverlo a mano. Si otro guardado está en curso, este espera su turno y el editor muestra «Guardado pendiente».
 - **Usar el del disco** descarta el borrador.
 - **Editar el resultado** permite corregir el texto final; al aplicarlo queda como borrador sobre la versión del disco con la que se preparó y sigue el flujo normal de guardado. Si el archivo vuelve a cambiar mientras lo editas, se avisa y, al aplicar, la comparación aparece de nuevo con la versión más reciente: el cambio externo no se deshace en silencio.
 

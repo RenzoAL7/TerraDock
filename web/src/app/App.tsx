@@ -35,6 +35,7 @@ import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
 import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
+import { SaveQueue } from "./saveQueue";
 import type { StoredDraft } from "./draftStore";
 import { declarationEnd, resourceAtLine } from "./blocks";
 import { DeployPanel } from "../features/deploy/DeployPanel";
@@ -142,23 +143,24 @@ export default function App() {
   const projectRef = useRef(project);
   projectRef.current = project;
   const applyQueue = useRef(Promise.resolve(""));
-  const savingRef = useRef(false);
   // Our own save reaches this tab over SSE before its HTTP response; until
   // then the draft looks based on an old revision but is not a conflict.
   const [savingPath, setSavingPath] = useState("");
+  // One save at a time; one asked for meanwhile waits instead of vanishing.
+  const [waitingSaves, setWaitingSaves] = useState<readonly string[]>([]);
+  const [saveQueue] = useState(() => new SaveQueue(setWaitingSaves));
 
-  const saveDraft = useCallback(
+  const writeDraft = useCallback(
     async (path: string) => {
       const current = projectRef.current;
       const captured = draftsRef.current[path];
       const file = current?.files.find((f) => f.path === path);
-      if (!current || !captured || !file || savingRef.current) return;
+      if (!current || !captured || !file) return;
       if (
         captured.projectId !== current.id ||
         captured.baseRevision !== file.revision
       )
         return;
-      savingRef.current = true;
       setSavingPath(path);
       try {
         const next = await perform(() =>
@@ -172,11 +174,14 @@ export default function App() {
         if (next)
           setDrafts((latest) => afterFileSave(latest, path, captured, next));
       } finally {
-        savingRef.current = false;
         setSavingPath("");
       }
     },
     [perform],
+  );
+  const saveDraft = useCallback(
+    (path: string) => saveQueue.request(path, () => writeDraft(path)),
+    [saveQueue, writeDraft],
   );
 
   // Graph → code: apply an inspector value to the file draft immediately.
@@ -490,13 +495,15 @@ export default function App() {
               <RadioTower size={11} />
               {readOnlyFile
                 ? "Solo lectura · TerraDock no interpreta .tf.json"
-                : draft
-                  ? autosave && !conflict
-                    ? live.valid
-                      ? "En vivo · guardando automáticamente"
-                      : "En vivo · autoguardado en pausa (HCL con errores)"
-                    : "En vivo · sin guardar"
-                  : "Archivo sincronizado"}
+                : waitingSaves.includes(file.path)
+                  ? "Guardado pendiente · espera a que termine otro guardado"
+                  : draft
+                    ? autosave && !conflict
+                      ? live.valid
+                        ? "En vivo · guardando automáticamente"
+                        : "En vivo · autoguardado en pausa (HCL con errores)"
+                      : "En vivo · sin guardar"
+                    : "Archivo sincronizado"}
             </span>
             <div>
               <button
