@@ -62,13 +62,6 @@ export default function CodeEditor({
     );
   }, [start, end]);
   useEffect(applyHighlight, [applyHighlight, value]);
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (editor && line > 0) {
-      editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column: 1 });
-    }
-  }, [line, path, revealKey]);
   const updateMarkers = useCallback(() => {
     const model = editorRef.current?.getModel();
     if (!model) return;
@@ -117,6 +110,15 @@ export default function CodeEditor({
     editor.pushUndoStop();
   }, []);
   useEffect(syncValue, [syncValue, value]);
+  // After syncing the value: a line added by the same update (a resource
+  // created from the diagram) must exist before it is revealed.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && line > 0) {
+      editor.revealLineInCenter(line);
+      editor.setPosition({ lineNumber: line, column: 1 });
+    }
+  }, [line, path, revealKey]);
   return (
     <Editor
       path={path}
