@@ -18,6 +18,7 @@ import {
   FileCode2,
   FolderOpen,
   GitBranch,
+  History,
   Layers3,
   LayoutPanelLeft,
   Menu,
@@ -33,6 +34,7 @@ import {
 import { useWorkspace } from "./useWorkspace";
 import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
+import { useDraftRecovery } from "./useDraftRecovery";
 import { blockEnd, resourceAtLine } from "./blocks";
 import { DeployPanel } from "../features/deploy/DeployPanel";
 import { deployMarks, useFloci } from "../features/deploy/useFloci";
@@ -69,6 +71,15 @@ function defaultSelection(project: Project) {
     project.resources[0]?.id ??
     ""
   );
+}
+const relativeTime = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+/** "hace 5 minutos", "ayer"… for a past timestamp. */
+function ago(timestamp: number) {
+  const minutes = Math.round((timestamp - Date.now()) / 60_000);
+  if (minutes > -60) return relativeTime.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return relativeTime.format(hours, "hour");
+  return relativeTime.format(Math.round(hours / 24), "day");
 }
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
@@ -118,6 +129,8 @@ export default function App() {
   const urgentPreview = useRef(false);
   const live = useLivePreview(project, drafts, 60, urgentPreview);
   const floci = useFloci(project?.id, project?.revision, view === "deploy");
+  // Drafts survive closing or reloading the tab (browser profile, 7 days).
+  const recovery = useDraftRecovery(session, project, drafts);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
@@ -355,6 +368,15 @@ export default function App() {
     setLine(targetLine);
     setReveal((n) => n + 1);
     setView("code");
+  };
+  const restoreDraft = (entry: (typeof recovery.offers)[number]) => {
+    const restored = recovery.restore(entry);
+    if (!restored) return;
+    const next = { ...draftsRef.current, [entry.file]: restored };
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    code(entry.file);
   };
   const switchWorkspace = (action: () => void) => {
     if (hasUnsaved) setPending(() => action);
@@ -649,6 +671,36 @@ export default function App() {
           </button>
         </div>
       )}
+      {recovery.offers.map((entry) => {
+        const saved = project.files.find((f) => f.path === entry.file);
+        const current = saved?.revision === entry.baseRevision;
+        return (
+          <div
+            className="global-message recovery-message"
+            role="status"
+            key={entry.key}
+          >
+            <History size={16} />
+            <span>
+              {!saved
+                ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
+                : current
+                  ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
+                  : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
+            </span>
+            {saved ? (
+              <button onClick={() => restoreDraft(entry)}>
+                {current ? "Restaurar borrador" : "Comparar con el disco"}
+              </button>
+            ) : (
+              <button onClick={() => download(entry.file, entry.content)}>
+                Descargar {entry.file}
+              </button>
+            )}
+            <button onClick={() => recovery.discard(entry)}>Descartar</button>
+          </div>
+        );
+      })}
       <div
         className={`workspace ${sidebar ? "" : "sidebar-hidden"} ${resource && (view === "architecture" || view === "split") ? "with-inspector" : ""}`}
       >
@@ -1046,8 +1098,9 @@ export default function App() {
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus
-              pestañas. Los borradores quedan en cada pestaña hasta guardar o
-              cerrar.
+              pestañas. Los borradores sin guardar se conservan en este
+              navegador durante 7 días: al volver a abrir el proyecto puedes
+              restaurarlos.
             </p>
           </div>
         </Dialog>

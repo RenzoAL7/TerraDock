@@ -563,6 +563,106 @@ test("descartar el borrador también descarta lo escrito en el inspector", async
   );
 });
 
+/** Drafts this browser profile keeps in IndexedDB, by file. */
+async function storedDrafts(page: Page): Promise<Record<string, string>> {
+  return page.evaluate(
+    () =>
+      new Promise<Record<string, string>>((resolve) => {
+        const open = indexedDB.open("terradock", 1);
+        open.onupgradeneeded = () =>
+          open.result.createObjectStore("drafts", { keyPath: "key" });
+        open.onerror = () => resolve({});
+        open.onsuccess = () => {
+          const request = open.result
+            .transaction("drafts", "readonly")
+            .objectStore("drafts")
+            .getAll();
+          request.onsuccess = () => {
+            open.result.close();
+            resolve(
+              Object.fromEntries(
+                (request.result as { file: string; content: string }[]).map(
+                  (entry) => [entry.file, entry.content],
+                ),
+              ),
+            );
+          };
+        };
+      }),
+  );
+}
+
+async function reloadKeepingDrafts(page: Page) {
+  // Unsaved drafts still ask before leaving; accept like a user who reloads.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.reload();
+}
+
+test("un borrador sobrevive a recargar la pestaña y se puede restaurar", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const typed = original.replace('"t3.small"', '"t3.recuperado"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(async () => (await storedDrafts(page))["main.tf"])
+    .toBe(typed);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  await offer.getByRole("button", { name: "Restaurar borrador" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator(".view-lines")).toContainText("t3.recuperado");
+  await page.getByRole("button", { name: "Arquitectura", exact: true }).click();
+  await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
+    "t3.recuperado",
+  );
+  expect(
+    (await project(request)).files.find((file) => file.path === "main.tf")!
+      .content,
+  ).toBe(original);
+  // Discarding the restored draft also forgets it in the browser profile.
+  await page.getByRole("button", { name: "Código", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Descartar borrador", exact: true })
+    .click();
+  await expect.poll(async () => await storedDrafts(page)).toEqual({});
+});
+
+test("al recargar con el archivo cambiado por fuera se ofrece comparar", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const typed = localSource.replace('"t3.micro"', '"t3.medium"');
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(async () => (await storedDrafts(page))["main.tf"])
+    .toBe(typed);
+  const external = localSource.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(join(directory, "main.tf"), external);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("cambió fuera de TerraDock");
+  await expect(
+    offer.getByRole("button", { name: "Restaurar borrador" }),
+  ).toHaveCount(0);
+  await offer.getByRole("button", { name: "Comparar con el disco" }).click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: /cambió|conflicto/i })
+      .first(),
+  ).toBeVisible();
+  expect(await readFile(join(directory, "main.tf"), "utf8")).toBe(external);
+});
+
 /** 300 resource blocks over several files: VPCs, subnets, groups, instances. */
 function largeProject(count: number): Record<string, string> {
   const files: Record<string, string> = {};

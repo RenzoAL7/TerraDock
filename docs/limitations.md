@@ -47,7 +47,14 @@ La escritura atómica y la comprobación previa tienen límites frente a herrami
 
 El guardado prepara un archivo temporal, conserva los bits de permisos, sincroniza su contenido y vuelve a comprobar la revisión antes de reemplazar el original. La comprobación y el reemplazo no son una transacción compartida con otros editores: existe una ventana de carrera. No se promete preservar todos los metadatos del sistema de archivos ni recuperación frente a pérdida de alimentación.
 
-Los borradores viven en la memoria de la pestaña. Pueden descargarse para conservarlos, pero no existe recuperación persistente después de cerrar el navegador o reiniciar el equipo. Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto.
+Los borradores sin guardar se copian al **perfil del navegador** (IndexedDB) unos 400 ms después de dejar de escribir, y al ocultar o cerrar la pestaña. Cada borrador se identifica por la raíz de `--root`, la carpeta del proyecto (o el ejemplo) y el archivo, y guarda la revisión y el texto del archivo del que partió. Al volver a abrir ese proyecto, TerraDock ofrece **Restaurar borrador** si el archivo no cambió, o **Comparar con el disco** si cambió desde entonces. Se borran al guardar o descartar, y se eliminan solos a los 7 días.
+
+- Quedan en el equipo, sin cifrar, en el perfil del navegador que usaste: otro navegador, otro perfil o una ventana privada no los ven. Borrar los datos del sitio los elimina.
+- Si el navegador no permite IndexedDB (algunos modos privados) o se queda sin espacio, la aplicación sigue funcionando sin esa copia; los borradores vuelven a vivir solo en la pestaña.
+- Si se escribe un borrador nuevo de un archivo antes de restaurar el anterior, el nuevo reemplaza al guardado.
+- La copia no sustituye a guardar: un cierre inesperado puede perder lo escrito en los últimos instantes.
+
+Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto.
 
 Las propiedades no compatibles se editan desde el código. Una propiedad que referencia una variable no debe reemplazarse silenciosamente por un literal desde el inspector.
 

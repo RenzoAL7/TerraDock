@@ -38,6 +38,7 @@ describe("snapshot ordering", () => {
       projectId: response.id,
       content: "saved B",
       baseRevision: "A",
+      baseContent: "A",
     };
     const continued = { ...captured, content: "typing C" };
     const drafts = afterFileSave(

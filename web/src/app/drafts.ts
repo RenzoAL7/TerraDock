@@ -27,7 +27,11 @@ export function afterFileSave(
     latest.projectId === captured.projectId &&
     latest.baseRevision === captured.baseRevision
   )
-    next[path] = { ...latest, baseRevision: file.revision };
+    next[path] = {
+      ...latest,
+      baseRevision: file.revision,
+      baseContent: file.content,
+    };
   return next;
 }
 
@@ -72,10 +76,14 @@ export function withDraft(
     delete next[path];
     return next;
   }
-  next[path] = {
-    content,
-    baseRevision: current[path]?.baseRevision ?? saved.revision,
-    projectId: current[path]?.projectId ?? projectId,
-  };
+  const previous = current[path];
+  next[path] = previous
+    ? { ...previous, content }
+    : {
+        content,
+        baseRevision: saved.revision,
+        baseContent: saved.content,
+        projectId,
+      };
   return next;
 }

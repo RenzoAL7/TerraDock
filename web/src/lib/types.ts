@@ -86,6 +86,8 @@ export interface Draft {
   projectId: string;
   content: string;
   baseRevision: string;
+  /** Text of the file at `baseRevision`, for comparing and rebasing. */
+  baseContent: string;
 }
 
 export function normalizeProject(project: Project): Project {
