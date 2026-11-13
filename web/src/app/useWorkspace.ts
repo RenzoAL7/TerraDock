@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage } from "../lib/api";
-import type { Project, Session } from "../lib/types";
+import type { Draft, Project, Session } from "../lib/types";
 import { mutationResult, ProjectInbox } from "./mergeProject";
+import { draftKey, projectLocation } from "./draftStore";
 
 const startupConnectionError =
   "No se pudo conectar con el servidor local. Comprueba que TerraDock está ejecutándose y vuelve a intentar.";
@@ -125,4 +126,131 @@ export function useWorkspace() {
     }
   }, []);
   return { project, session, error, setError, connected, busy, perform };
+}
+
+type PresenceMessage =
+  | { kind: "hello"; tab: string }
+  | { kind: "drafts"; tab: string; keys: string[] }
+  | { kind: "bye"; tab: string };
+
+export type PresenceChannel = Pick<
+  BroadcastChannel,
+  "postMessage" | "close" | "onmessage"
+>;
+
+function presenceMessage(data: unknown): PresenceMessage | null {
+  if (typeof data !== "object" || data === null) return null;
+  const message = data as Partial<PresenceMessage> & { keys?: unknown };
+  if (typeof message.tab !== "string") return null;
+  if (message.kind === "hello" || message.kind === "bye")
+    return message as PresenceMessage;
+  if (
+    message.kind === "drafts" &&
+    Array.isArray(message.keys) &&
+    message.keys.every((k) => typeof k === "string")
+  )
+    return message as PresenceMessage;
+  return null;
+}
+
+/**
+ * Tells the other tabs of this browser which files have unsaved drafts here,
+ * and keeps the set of draft keys they announce. Without BroadcastChannel it
+ * does nothing. Only keys travel between tabs, never file contents.
+ */
+export class DraftPresence {
+  private mine: string[] = [];
+  private others = new Map<string, string[]>();
+  readonly tab = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  constructor(
+    private channel: PresenceChannel | null,
+    private onChange: (keys: ReadonlySet<string>) => void,
+  ) {
+    if (!channel) return;
+    channel.onmessage = (event: MessageEvent) => this.receive(event.data);
+    this.post({ kind: "hello", tab: this.tab });
+  }
+
+  publish(keys: string[]) {
+    const sorted = [...keys].sort();
+    if (sorted.join("\n") === this.mine.join("\n")) return;
+    this.mine = sorted;
+    this.post({ kind: "drafts", tab: this.tab, keys: sorted });
+  }
+
+  close() {
+    this.post({ kind: "bye", tab: this.tab });
+    this.channel?.close();
+    this.channel = null;
+  }
+
+  private post(message: PresenceMessage) {
+    try {
+      this.channel?.postMessage(message);
+    } catch {
+      // A closed channel only loses the notice, never edits.
+    }
+  }
+
+  private receive(data: unknown) {
+    const message = presenceMessage(data);
+    if (!message || message.tab === this.tab) return;
+    if (message.kind === "hello") {
+      // A new tab asks who is editing what.
+      if (this.mine.length)
+        this.post({ kind: "drafts", tab: this.tab, keys: this.mine });
+      return;
+    }
+    if (message.kind === "drafts" && message.keys.length)
+      this.others.set(message.tab, message.keys);
+    else this.others.delete(message.tab);
+    this.onChange(new Set([...this.others.values()].flat()));
+  }
+}
+
+/**
+ * Files of the open project that another tab of this browser is editing
+ * without saving. Announced over BroadcastChannel; nothing leaves the browser.
+ */
+export function useOtherTabDrafts(
+  session: Session | null,
+  project: Project | null,
+  drafts: Record<string, Draft>,
+): ReadonlySet<string> {
+  const [others, setOthers] = useState<ReadonlySet<string>>(new Set());
+  const presence = useRef<DraftPresence | null>(null);
+  useEffect(() => {
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel("terradock-drafts");
+    const current = new DraftPresence(channel, setOthers);
+    presence.current = current;
+    const leave = () => current.close();
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      current.close();
+      presence.current = null;
+    };
+  }, []);
+  const root = session?.root;
+  const location = project ? projectLocation(project) : undefined;
+  const projectId = project?.id;
+  useEffect(() => {
+    if (!root || location === undefined) return;
+    presence.current?.publish(
+      Object.entries(drafts)
+        .filter(([, draft]) => draft.projectId === projectId)
+        .map(([file]) => draftKey(root, location, file)),
+    );
+  }, [root, location, projectId, drafts]);
+  return useMemo(() => {
+    if (!root || location === undefined) return new Set<string>();
+    const files = new Set<string>();
+    for (const file of project?.files ?? [])
+      if (others.has(draftKey(root, location, file.path))) files.add(file.path);
+    return files;
+  }, [others, root, location, project?.files]);
 }

@@ -14,6 +14,7 @@ export default function CodeEditor({
   onSave,
   onCursor,
   highlight,
+  readOnly = false,
 }: {
   path: string;
   value: string;
@@ -27,6 +28,7 @@ export default function CodeEditor({
   onCursor?: (line: number) => void;
   /** Lines of the resource selected in the diagram, inclusive. */
   highlight?: { start: number; end: number } | null;
+  readOnly?: boolean;
 }) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorations = useRef<monaco.editor.IEditorDecorationsCollection | null>(
@@ -159,6 +161,7 @@ export default function CodeEditor({
         smoothScrolling: true,
         ariaLabel: `Código Terraform ${path.split("/").pop()}`,
         fixedOverflowWidgets: true,
+        readOnly,
       }}
     />
   );

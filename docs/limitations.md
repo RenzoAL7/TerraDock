@@ -23,11 +23,12 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 
 ## Límites de archivos y rutas
 
-- Se leen como máximo **100 archivos `.tf`** del directorio seleccionado, sin fusionar los módulos de subcarpetas.
+- Se leen como máximo **100 archivos `.tf` o `.tf.json`** del directorio seleccionado, sin fusionar los módulos de subcarpetas.
 - Cada archivo admite hasta **2 MiB** y el conjunto hasta **20 MiB**; un MiB equivale a 1.048.576 bytes. Abrir o guardar contenido que exceda estos límites devuelve un error.
 - El selector devuelve hasta 1.000 subcarpetas por ubicación y omite `.git`, `.terraform`, `node_modules` y enlaces simbólicos.
 - Las carpetas seleccionadas deben quedar dentro de la raíz canónica de `--root`. Se rechazan escapes de ruta y componentes simbólicos dentro de esa raíz; un archivo `.tf` enlazado simbólicamente impide abrir ese módulo.
 - Solo se guardan archivos regulares `.tf` ya presentes en el módulo abierto. Esta demo no crea, renombra ni elimina archivos desde la interfaz.
+- Si otro programa crea, renombra o borra un `.tf`, el proyecto se actualiza solo. Un borrador de un archivo que ya no existe (por ejemplo, tras renombrarlo) queda huérfano: no se puede guardar con el nombre anterior ni vuelve a crear ese archivo, y la aplicación ofrece descargarlo.
 - Estas comprobaciones delimitan el acceso normal de la aplicación; no constituyen un sandbox del sistema operativo frente a otros procesos locales.
 
 ## Interpretación
@@ -35,7 +36,7 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 - No se expande el contenido de módulos locales o remotos; seleccionar una subcarpeta implica analizar ese módulo por separado.
 - No se evalúa la precedencia de `.tfvars`, variables de entorno u opciones CLI.
 - `count`, `for_each`, funciones y bloques dinámicos pueden conservarse como código; la demo no garantiza resolver su efecto.
-- No se interpreta el formato alternativo `.tf.json` como un proyecto completo.
+- Los archivos `.tf.json` aparecen en la lista de archivos, en solo lectura y con un aviso, pero su contenido no se interpreta: sus recursos no llegan al diagrama. Tampoco se copian a la ejecución de Floci, que sigue usando solo los `.tf`.
 - No hay validación semántica con esquemas de proveedores. Un archivo sintácticamente correcto todavía puede resultar inválido para Terraform o AWS.
 - Los nombres, las etiquetas y las relaciones dibujadas no demuestran conectividad, seguridad o disponibilidad de una infraestructura real.
 
@@ -53,7 +54,12 @@ Cuando un archivo cambia en disco mientras tiene un borrador, el editor muestra 
 
 La fusión compara líneas de texto, no la estructura HCL: dos cambios en líneas distintas de un mismo bloque se combinan aunque juntos no tengan sentido para Terraform. Con diferencias muy extensas (más de 2.000 líneas distintas) no se intenta combinar y se pide resolver a mano.
 
-El guardado prepara un archivo temporal, conserva los bits de permisos, sincroniza su contenido y vuelve a comprobar la revisión antes de reemplazar el original. La comprobación y el reemplazo no son una transacción compartida con otros editores: existe una ventana de carrera. No se promete preservar todos los metadatos del sistema de archivos ni recuperación frente a pérdida de alimentación.
+El guardado prepara un archivo temporal, conserva los bits de permisos, sincroniza su contenido y vuelve a comprobar la revisión antes de reemplazar el original. La comprobación y el reemplazo no son una transacción compartida con otros editores: existe una ventana de carrera. Las pruebas de `internal/workspace` fijan el comportamiento real en esa ventana:
+
+- Si otro programa escribe el archivo mientras se prepara el temporal (hasta la última comprobación), el guardado se rechaza como conflicto, el archivo externo se conserva y el borrador sigue en la pestaña.
+- Si la escritura externa cae entre la última comprobación y el reemplazo (un intervalo muy corto), gana el guardado de TerraDock y el cambio externo se pierde. Después, disco y aplicación coinciden.
+
+No se promete preservar todos los metadatos del sistema de archivos ni recuperación frente a pérdida de alimentación.
 
 Los borradores sin guardar se copian al **perfil del navegador** (IndexedDB) unos 400 ms después de dejar de escribir, y al ocultar o cerrar la pestaña. Cada borrador se identifica por la raíz de `--root`, la carpeta del proyecto (o el ejemplo) y el archivo, y guarda la revisión y el texto del archivo del que partió. Al volver a abrir ese proyecto, TerraDock ofrece **Restaurar borrador** si el archivo no cambió, o **Comparar con el disco** si cambió desde entonces. Se borran al guardar o descartar, y se eliminan solos a los 7 días.
 
@@ -62,7 +68,7 @@ Los borradores sin guardar se copian al **perfil del navegador** (IndexedDB) uno
 - Si se escribe un borrador nuevo de un archivo antes de restaurar el anterior, el nuevo reemplaza al guardado.
 - La copia no sustituye a guardar: un cierre inesperado puede perder lo escrito en los últimos instantes.
 
-Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto.
+Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto. Las pestañas del mismo navegador se avisan (con `BroadcastChannel`, sin salir del navegador) cuando una tiene un borrador sin guardar de un archivo que la otra está mirando; ese borrador no se ofrece para restaurar mientras la otra pestaña siga abierta. Si una pestaña se cierra de forma inesperada, el aviso puede quedar hasta recargar.
 
 Las propiedades no compatibles se editan desde el código. Una propiedad que referencia una variable no debe reemplazarse silenciosamente por un literal desde el inspector.
 

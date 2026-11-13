@@ -31,7 +31,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useWorkspace } from "./useWorkspace";
+import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
 import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
@@ -133,6 +133,7 @@ export default function App() {
   const floci = useFloci(project?.id, project?.revision, view === "deploy");
   // Drafts survive closing or reloading the tab (browser profile, 7 days).
   const recovery = useDraftRecovery(session, project, drafts);
+  const otherTabs = useOtherTabDrafts(session, project, drafts);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
@@ -342,6 +343,8 @@ export default function App() {
     floci.read,
   );
   const editorContent = file ? (draft?.content ?? file.content) : "";
+  // Listed so their warning is visible; their content is not interpreted.
+  const readOnlyFile = !!file && file.path.endsWith(".tf.json");
   const linked =
     resource && file && resource.file === file.path
       ? { start: resource.line, end: blockEnd(editorContent, resource.line) }
@@ -473,13 +476,15 @@ export default function App() {
           <div className="editor-toolbar">
             <span className="sync-state">
               <RadioTower size={11} />
-              {draft
-                ? autosave && !conflict
-                  ? live.valid
-                    ? "En vivo · guardando automáticamente"
-                    : "En vivo · autoguardado en pausa (HCL con errores)"
-                  : "En vivo · sin guardar"
-                : "Archivo sincronizado"}
+              {readOnlyFile
+                ? "Solo lectura · TerraDock no interpreta .tf.json"
+                : draft
+                  ? autosave && !conflict
+                    ? live.valid
+                      ? "En vivo · guardando automáticamente"
+                      : "En vivo · autoguardado en pausa (HCL con errores)"
+                    : "En vivo · sin guardar"
+                  : "Archivo sincronizado"}
             </span>
             <div>
               <button
@@ -514,6 +519,13 @@ export default function App() {
               </button>
             </div>
           </div>
+          {otherTabs.has(file.path) && (
+            <div className="conflict-banner" role="status">
+              Otra pestaña tiene un borrador sin guardar de {file.path}. Si
+              también lo editas aquí, se guardará primero el que llegue antes y
+              el otro tendrá que compararse con el disco.
+            </div>
+          )}
           {projectConflict && (
             <div className="conflict-banner" role="alert">
               Cambió el proyecto abierto. Tu borrador se conserva: descárgalo
@@ -539,6 +551,7 @@ export default function App() {
                 <CodeEditor
                   key={`${project.id}:${file.path}`}
                   path={`${project.id}/${file.path}`}
+                  readOnly={readOnlyFile}
                   value={editorContent}
                   line={line}
                   revealKey={reveal}
@@ -710,36 +723,39 @@ export default function App() {
           </button>
         </div>
       )}
-      {recovery.offers.map((entry) => {
-        const saved = project.files.find((f) => f.path === entry.file);
-        const current = saved?.revision === entry.baseRevision;
-        return (
-          <div
-            className="global-message recovery-message"
-            role="status"
-            key={entry.key}
-          >
-            <History size={16} />
-            <span>
-              {!saved
-                ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
-                : current
-                  ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
-                  : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
-            </span>
-            {saved ? (
-              <button onClick={() => restoreDraft(entry)}>
-                {current ? "Restaurar borrador" : "Comparar con el disco"}
-              </button>
-            ) : (
-              <button onClick={() => download(entry.file, entry.content)}>
-                Descargar {entry.file}
-              </button>
-            )}
-            <button onClick={() => recovery.discard(entry)}>Descartar</button>
-          </div>
-        );
-      })}
+      {/* A draft that another open tab is editing is not offered here. */}
+      {recovery.offers
+        .filter((entry) => !otherTabs.has(entry.file))
+        .map((entry) => {
+          const saved = project.files.find((f) => f.path === entry.file);
+          const current = saved?.revision === entry.baseRevision;
+          return (
+            <div
+              className="global-message recovery-message"
+              role="status"
+              key={entry.key}
+            >
+              <History size={16} />
+              <span>
+                {!saved
+                  ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
+                  : current
+                    ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
+                    : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
+              </span>
+              {saved ? (
+                <button onClick={() => restoreDraft(entry)}>
+                  {current ? "Restaurar borrador" : "Comparar con el disco"}
+                </button>
+              ) : (
+                <button onClick={() => download(entry.file, entry.content)}>
+                  Descargar {entry.file}
+                </button>
+              )}
+              <button onClick={() => recovery.discard(entry)}>Descartar</button>
+            </div>
+          );
+        })}
       <div
         className={`workspace ${sidebar ? "" : "sidebar-hidden"} ${resource && (view === "architecture" || view === "split") ? "with-inspector" : ""}`}
       >

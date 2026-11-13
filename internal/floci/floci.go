@@ -144,6 +144,23 @@ func ValidateEndpoint(raw string) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
+// nativeOnly drops .tf.json files from the project. The workspace lists them
+// so the editor can warn about them, but Floci keeps staging only native HCL:
+// its provider and variable inspection reads HCL syntax.
+func nativeOnly(source Source) Source {
+	return func() Project {
+		project := source()
+		files := make(map[string]string, len(project.Files))
+		for name, body := range project.Files {
+			if !strings.HasSuffix(name, ".tf.json") {
+				files[name] = body
+			}
+		}
+		project.Files = files
+		return project
+	}
+}
+
 func New(cfg Config, source Source) (*Runner, error) {
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = DefaultEndpoint
@@ -176,7 +193,7 @@ func New(cfg Config, source Source) (*Runner, error) {
 	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("prepare floci state dir: %w", err)
 	}
-	return &Runner{cfg: cfg, source: source, client: &http.Client{Timeout: 1500 * time.Millisecond}, plans: map[string]*Plan{}, deployed: map[string][]string{}, values: map[string]map[string]string{}}, nil
+	return &Runner{cfg: cfg, source: nativeOnly(source), client: &http.Client{Timeout: 1500 * time.Millisecond}, plans: map[string]*Plan{}, deployed: map[string][]string{}, values: map[string]map[string]string{}}, nil
 }
 
 func (r *Runner) Close() {

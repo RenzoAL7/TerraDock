@@ -348,3 +348,17 @@ func TestTerraformRunsKeepOnlyRegistrySettingsFromTheUser(t *testing.T) {
 		}
 	}
 }
+
+func TestFlociStagesOnlyNativeTerraform(t *testing.T) {
+	source := nativeOnly(func() Project {
+		return Project{ID: "p", Files: map[string]string{"main.tf": `resource "aws_s3_bucket" "b" {}`, "extra.tf.json": `{"resource": {}}`}}
+	})
+	files := source().Files
+	if len(files) != 1 || files["main.tf"] == "" {
+		t.Fatalf(".tf.json must not reach Floci staging: %v", files)
+	}
+	empty := nativeOnly(func() Project { return Project{ID: "p", Files: map[string]string{"only.tf.json": "{}"}} })
+	if len(empty().Files) != 0 {
+		t.Fatal("a project with only .tf.json has no native files for Floci")
+	}
+}
