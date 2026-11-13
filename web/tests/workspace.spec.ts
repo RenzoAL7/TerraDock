@@ -618,6 +618,46 @@ test("el autoguardado espera a que el HCL sea válido", async ({
   expect((await project(request)).valid).toBe(true);
 });
 
+test("los valores sensibles no se muestran en la tarjeta ni en el inspector", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await openLocalFolder(
+    page,
+    {
+      "main.tf": `variable "db_password" {
+  default   = "s3cr3t-pass"
+  sensitive = true
+}
+
+variable "env" {
+  default = "dev"
+}
+
+output "password" {
+  value     = var.db_password
+  sensitive = true
+}
+`,
+    },
+    "var.db_password",
+  );
+  const secret = page.getByTestId("node-var.db_password");
+  await expect(secret).toContainText("(sensible)");
+  await expect(secret).not.toContainText("s3cr3t");
+  await expect(page.getByTestId("node-output.password")).toContainText(
+    "(sensible)",
+  );
+  // Without sensitive = true the value is shown as before.
+  await expect(page.getByTestId("node-var.env")).toContainText("dev");
+  await page.getByTestId("resource-var.db_password").click();
+  const inspector = page.getByRole("complementary", {
+    name: "Inspector de propiedades",
+  });
+  await expect(inspector).toContainText("(sensible)");
+  await expect(inspector).not.toContainText("s3cr3t");
+});
+
 test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   page,
 }) => {

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Project, Property, Resource } from "../../lib/types";
 import { ResourceIcon } from "../architecture/ArchitectureCanvas";
+import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import { shortType } from "../architecture/graph";
 
 /** Text typed in a field; it is applied to the code draft as you type. */
@@ -203,9 +204,16 @@ export function Inspector({
                   </span>
                 )}
               </label>
-              <code className="property-expression" title={property.expression}>
-                {property.expression}
-              </code>
+              {hidesValue(resource, property) ? (
+                <code className="property-expression">{SENSITIVE_TEXT}</code>
+              ) : (
+                <code
+                  className="property-expression"
+                  title={property.expression}
+                >
+                  {property.expression}
+                </code>
+              )}
               {property.readOnlyReason && (
                 <p className="read-only-reason">{property.readOnlyReason}</p>
               )}

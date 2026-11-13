@@ -33,6 +33,7 @@ import {
   Workflow,
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
+import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import { buildGraph, shortType, type ResourceNode } from "./graph";
 import type { DeployMark } from "../deploy/useFloci";
 
@@ -159,7 +160,11 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
       </div>
       <strong title={r.id}>{r.label || r.name}</strong>
       <span className="node-detail">
-        {p ? String(p.value ?? p.expression).replaceAll('"', "") : r.file}
+        {p
+          ? hidesValue(r, p)
+            ? SENSITIVE_TEXT
+            : String(p.value ?? p.expression).replaceAll('"', "")
+          : r.file}
       </span>
       <Handle type="source" position={Position.Bottom} />
     </div>
