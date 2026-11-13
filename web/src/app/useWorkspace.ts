@@ -168,6 +168,25 @@ export class DraftPresence {
     /** Same id the draft store writes under, so both name this tab alike. */
     readonly tab: string = newTabId(),
   ) {
+    this.listen(channel);
+  }
+
+  /**
+   * Listen again after the page comes back from the back/forward cache: the
+   * channel was closed on `pagehide`. Re-announces this tab's drafts and asks
+   * the others for theirs, since messages sent meanwhile were lost.
+   */
+  reopen(channel: PresenceChannel | null) {
+    this.channel?.close();
+    this.channel = channel;
+    this.others.clear();
+    this.onChange(new Set());
+    this.listen(channel);
+    if (this.mine.length)
+      this.post({ kind: "drafts", tab: this.tab, keys: this.mine });
+  }
+
+  private listen(channel: PresenceChannel | null) {
     if (!channel) return;
     channel.onmessage = (event: MessageEvent) => this.receive(event.data);
     this.post({ kind: "hello", tab: this.tab });
@@ -222,16 +241,23 @@ export function useOtherTabDrafts(
   const [others, setOthers] = useState<ReadonlySet<string>>(new Set());
   const presence = useRef<DraftPresence | null>(null);
   useEffect(() => {
-    const channel =
+    const open = () =>
       typeof BroadcastChannel === "undefined"
         ? null
         : new BroadcastChannel("terradock-drafts");
-    const current = new DraftPresence(channel, setOthers, TAB_ID);
+    const current = new DraftPresence(open(), setOthers, TAB_ID);
     presence.current = current;
     const leave = () => current.close();
+    // A page restored from the back/forward cache keeps its drafts: announce
+    // them again on a fresh channel.
+    const back = (event: PageTransitionEvent) => {
+      if (event.persisted) current.reopen(open());
+    };
     window.addEventListener("pagehide", leave);
+    window.addEventListener("pageshow", back);
     return () => {
       window.removeEventListener("pagehide", leave);
+      window.removeEventListener("pageshow", back);
       current.close();
       presence.current = null;
     };

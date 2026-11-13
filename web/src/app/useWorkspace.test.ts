@@ -48,6 +48,31 @@ describe("DraftPresence", () => {
     await until(() => late.seen().size === 0);
   });
 
+  it("announces its drafts again when the page comes back from the cache", async () => {
+    const name = `presence-${++channels}`;
+    const a = tab(name);
+    const b = tab(name);
+    a.presence.publish(["main.tf"]);
+    b.presence.publish(["net.tf"]);
+    await until(() => b.seen().has("main.tf") && a.seen().has("net.tf"));
+    // pagehide closes the channel; pageshow (persisted) reopens it.
+    a.presence.close();
+    await until(() => b.seen().size === 0);
+    a.presence.reopen(new BroadcastChannel(name));
+    await until(() => b.seen().has("main.tf"));
+    await until(() => a.seen().has("net.tf"));
+  });
+
+  it("forgets other tabs when it cannot reopen a channel", async () => {
+    const name = `presence-${++channels}`;
+    const a = tab(name);
+    const b = tab(name);
+    b.presence.publish(["net.tf"]);
+    await until(() => a.seen().has("net.tf"));
+    a.presence.reopen(null);
+    expect(a.seen().size).toBe(0);
+  });
+
   it("ignores malformed messages and works without BroadcastChannel", async () => {
     const name = `presence-${++channels}`;
     const b = tab(name);
