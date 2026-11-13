@@ -68,7 +68,7 @@ Los borradores sin guardar se copian al **perfil del navegador** (IndexedDB) uno
 
 - Quedan en el equipo, sin cifrar, en el perfil del navegador que usaste: otro navegador, otro perfil o una ventana privada no los ven. Borrar los datos del sitio los elimina.
 - Si el navegador no permite IndexedDB (algunos modos privados) o se queda sin espacio, la aplicación sigue funcionando sin esa copia; los borradores vuelven a vivir solo en la pestaña.
-- Si se escribe un borrador nuevo de un archivo antes de restaurar el anterior, el nuevo reemplaza al guardado.
+- Si escribes en un archivo que tiene un borrador por restaurar, el nuevo se guarda aparte y no reemplaza al anterior: este sigue ofrecido para **Descargar** o **Descartar** y solo se pierde si lo decides.
 - La copia no sustituye a guardar: un cierre inesperado puede perder lo escrito en los últimos instantes.
 
 Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto. Las pestañas del mismo navegador se avisan (con `BroadcastChannel`, sin salir del navegador) cuando una tiene un borrador sin guardar de un archivo que la otra está mirando; ese borrador no se ofrece para restaurar mientras la otra pestaña siga abierta. Si una pestaña se cierra de forma inesperada, el aviso puede quedar hasta recargar.

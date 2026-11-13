@@ -68,15 +68,9 @@ export function useDraftRecovery(
     };
   }, [root, location, projectId]);
 
-  // Typing a new draft for a file replaces what was stored for it.
-  useEffect(() => {
-    setOffers((current) =>
-      current.some((entry) => drafts[entry.file])
-        ? current.filter((entry) => !drafts[entry.file])
-        : current,
-    );
-  }, [drafts]);
-
+  // Typing a new draft for a file does not touch what another tab stored for
+  // it: this tab writes under its own key and the offer stays until the user
+  // restores, downloads or discards it.
   useEffect(() => {
     if (!root) return;
     const flush = () => {

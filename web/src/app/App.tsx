@@ -731,6 +731,9 @@ export default function App() {
         .map(({ entries: [entry, ...older] }) => {
           const saved = project.files.find((f) => f.path === entry.file);
           const current = saved?.revision === entry.baseRevision;
+          // This tab already has its own draft of the file (typed before
+          // deciding): the stored one is kept apart until the user decides.
+          const mine = !!drafts[entry.file];
           // Several closed tabs may have left one each: newest first.
           const more = older.length
             ? older.length === 1
@@ -745,14 +748,16 @@ export default function App() {
             >
               <History size={16} />
               <span>
-                {!saved
-                  ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
-                  : current
-                    ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
-                    : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
+                {mine
+                  ? `Hay otro borrador de ${entry.file} (${ago(entry.savedAt)}) sin restaurar. Tu borrador actual no lo reemplaza: descárgalo o descártalo cuando decidas.`
+                  : !saved
+                    ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
+                    : current
+                      ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
+                      : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
                 {more}
               </span>
-              {saved ? (
+              {saved && !mine ? (
                 <button onClick={() => restoreDraft(entry)}>
                   {current ? "Restaurar borrador" : "Comparar con el disco"}
                 </button>

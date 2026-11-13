@@ -674,6 +674,35 @@ async function storedDrafts(page: Page): Promise<Record<string, string>> {
   );
 }
 
+/** Every stored copy of one file (one per tab that left a draft), sorted. */
+async function storedCopies(page: Page, file: string): Promise<string[]> {
+  return page.evaluate(
+    (path) =>
+      new Promise<string[]>((resolve) => {
+        const open = indexedDB.open("terradock", 1);
+        open.onupgradeneeded = () =>
+          open.result.createObjectStore("drafts", { keyPath: "key" });
+        open.onerror = () => resolve([]);
+        open.onsuccess = () => {
+          const request = open.result
+            .transaction("drafts", "readonly")
+            .objectStore("drafts")
+            .getAll();
+          request.onsuccess = () => {
+            open.result.close();
+            resolve(
+              (request.result as { file: string; content: string }[])
+                .filter((entry) => entry.file === path)
+                .map((entry) => entry.content)
+                .sort(),
+            );
+          };
+        };
+      }),
+    file,
+  );
+}
+
 async function reloadKeepingDrafts(page: Page) {
   // Unsaved drafts still ask before leaving; accept like a user who reloads.
   page.once("dialog", (dialog) => void dialog.accept());
@@ -714,6 +743,42 @@ test("un borrador sobrevive a recargar la pestaña y se puede restaurar", async 
     .getByRole("button", { name: "Descartar borrador", exact: true })
     .click();
   await expect.poll(async () => await storedDrafts(page)).toEqual({});
+});
+
+test("escribir antes de decidir sobre un borrador recuperado no lo borra", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const left = original.replace('"t3.small"', '"t3.anterior"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, left);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([left]);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  // Typing in the same file before restoring keeps both copies.
+  const typed = original.replace('"t3.small"', '"t3.nuevo"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(() => storedCopies(page, "main.tf"))
+    .toEqual([left, typed].sort());
+  await expect(offer).toContainText("Tu borrador actual no lo reemplaza");
+  await expect(
+    offer.getByRole("button", { name: "Restaurar borrador" }),
+  ).toHaveCount(0);
+  await expect(
+    offer.getByRole("button", { name: "Descargar main.tf" }),
+  ).toBeVisible();
+  // Only an explicit decision removes the earlier one.
+  await offer.getByRole("button", { name: "Descartar", exact: true }).click();
+  await expect(offer).toHaveCount(0);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([typed]);
+  await expect(page.locator(".view-lines")).toContainText("t3.nuevo");
 });
 
 test("al recargar con el archivo cambiado por fuera se ofrece comparar", async ({
