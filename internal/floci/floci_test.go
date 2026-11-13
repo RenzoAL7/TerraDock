@@ -307,3 +307,44 @@ func TestFlociStartRunsWithoutRealAWSEnvironment(t *testing.T) {
 	}
 	flocitest.AssertSanitizedEnv(t, flocitest.ReadLog(log))
 }
+
+func TestTerraformRunsKeepOnlyRegistrySettingsFromTheUser(t *testing.T) {
+	setRealAWSEnvironment(t)
+	t.Setenv("TF_CLI_CONFIG_FILE", "/home/user/.terraformrc")
+	t.Setenv("TF_TOKEN_app_terraform_io", "registry-token")
+	t.Setenv("TF_VAR_db_password", "variable-secret")
+	t.Setenv("TF_DATA_DIR", "/elsewhere")
+	t.Setenv("TF_WORKSPACE", "production")
+	t.Setenv("TF_PLUGIN_CACHE_DIR", "/user-cache")
+	r, err := New(Config{StateDir: t.TempDir(), Terraform: "/bin/true", Endpoint: "http://127.0.0.1:1"}, func() Project { return Project{ID: "p1"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string][]string{}
+	for _, kv := range r.environment(t.TempDir()) {
+		key, value, _ := strings.Cut(kv, "=")
+		values[key] = append(values[key], value)
+	}
+	for key, want := range map[string]string{
+		"TF_CLI_CONFIG_FILE":        "/home/user/.terraformrc",
+		"TF_TOKEN_app_terraform_io": "registry-token",
+		"AWS_SECRET_ACCESS_KEY":     "test",
+		"CHECKPOINT_DISABLE":        "1",
+		"TF_PLUGIN_CACHE_DIR":       filepath.Join(r.cfg.StateDir, "plugin-cache"),
+	} {
+		if got := values[key]; len(got) != 1 || got[0] != want {
+			t.Errorf("%s = %q, want only %q", key, got, want)
+		}
+	}
+	for _, key := range []string{"TF_VAR_db_password", "TF_DATA_DIR", "TF_WORKSPACE", "TF_LOG", "AWS_PROFILE"} {
+		if got, ok := values[key]; ok {
+			t.Errorf("%s reached terraform: %q", key, got)
+		}
+	}
+	// terraform version and floci start need no registry access at all.
+	for _, kv := range r.toolEnvironment() {
+		if strings.HasPrefix(kv, "TF_") {
+			t.Errorf("tool environment kept %q", kv)
+		}
+	}
+}

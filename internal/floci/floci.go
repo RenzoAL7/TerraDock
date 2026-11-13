@@ -445,11 +445,27 @@ func (r *Runner) toolEnvironment() []string {
 	return append(env, "CHECKPOINT_DISABLE=1")
 }
 
-// environment is the Terraform run environment: the sanitized environment
-// plus test credentials and endpoints that only point at Floci.
+// registryVariable reports the TF_* variables kept for Terraform runs: the CLI
+// configuration file and registry tokens, so provider mirrors and private
+// registries keep working. Every other TF_* (TF_VAR_*, TF_DATA_DIR,
+// TF_WORKSPACE, TF_LOG…) is dropped.
+func registryVariable(key string) bool {
+	upper := strings.ToUpper(key)
+	return upper == "TF_CLI_CONFIG_FILE" || strings.HasPrefix(upper, "TF_TOKEN_")
+}
+
+// environment is the Terraform run environment: the sanitized environment,
+// the user's registry settings, and test credentials and endpoints that only
+// point at Floci.
 func (r *Runner) environment(dir string) []string {
 	missing := filepath.Join(dir, ".no-aws-config")
-	return append(r.toolEnvironment(),
+	env := r.toolEnvironment()
+	for _, kv := range os.Environ() {
+		if key, _, _ := strings.Cut(kv, "="); registryVariable(key) {
+			env = append(env, kv)
+		}
+	}
+	return append(env,
 		"AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_REGION=us-east-1", "AWS_DEFAULT_REGION=us-east-1",
 		"AWS_ENDPOINT_URL="+r.cfg.Endpoint, "AWS_CONFIG_FILE="+missing, "AWS_SHARED_CREDENTIALS_FILE="+missing,
 		"AWS_EC2_METADATA_DISABLED=true",

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -15,8 +16,12 @@ import (
 // log, waits until gate exists (when gate is not empty), prints stdout and
 // exits with code. Each invocation is recorded as "args: …", the environment
 // and a "--" separator.
+// The script needs /bin/sh, so the calling test is skipped on Windows.
 func FakeTool(t *testing.T, name, log, gate, stdout string, code int) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake tools are shell scripts")
+	}
 	path := filepath.Join(t.TempDir(), name)
 	script := fmt.Sprintf(`#!/bin/sh
 { echo "args: $*"; env; echo "--"; } >> %q
