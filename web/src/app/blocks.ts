@@ -47,12 +47,15 @@ export function blockEnd(content: string, startLine: number): number {
 }
 
 /**
- * Last line of a declaration: the range the parser sent, or the brace match
- * when it did not send one. Locals need the parser range, since several of
- * them share one block and each ends with its own value.
+ * Last line of a declaration. Blocks with braces are measured on the current
+ * text, so the range stays right while the HCL is invalid and the analysis
+ * is behind. A local shares its block with other locals: only the parser
+ * knows where its value ends, so it uses the range the parser sent.
  */
 export function declarationEnd(resource: Resource, content: string): number {
-  return resource.endLine ?? blockEnd(content, resource.line);
+  if (resource.block === "local" && resource.endLine !== undefined)
+    return resource.endLine;
+  return blockEnd(content, resource.line);
 }
 
 /** The resource whose block (in `file`) contains `line`, if any. */

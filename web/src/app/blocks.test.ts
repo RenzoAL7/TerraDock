@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockEnd, resourceAtLine } from "./blocks";
+import { blockEnd, declarationEnd, resourceAtLine } from "./blocks";
 import type { Resource } from "../lib/types";
 
 const source = `resource "aws_vpc" "main" {
@@ -57,7 +57,17 @@ resource "aws_vpc" "main" {
 }
 `;
   const at = (id: string, line: number, endLine: number) =>
-    ({ id, file: "main.tf", line, endLine }) as Resource;
+    ({
+      id,
+      block: id.startsWith("local.")
+        ? "local"
+        : id.startsWith("var.")
+          ? "variable"
+          : "resource",
+      file: "main.tf",
+      line,
+      endLine,
+    }) as Resource;
   const parsed = [
     at("local.prefix", 2, 2),
     at("local.name", 3, 3),
@@ -75,5 +85,25 @@ resource "aws_vpc" "main" {
   it("does not select another local from the second locals block", () => {
     expect(resourceAtLine(parsed, "main.tf", locals, 5)).toBeUndefined();
     expect(resourceAtLine(parsed, "main.tf", locals, 7)).toBeUndefined();
+  });
+});
+
+describe("declarationEnd", () => {
+  it("measures blocks on the current text, not on a stale analysis", () => {
+    // The last valid analysis said the VPC ended at line 4; the user has
+    // since added lines and the HCL may be invalid elsewhere.
+    const vpc = {
+      id: "aws_vpc.main",
+      block: "resource",
+      line: 1,
+      endLine: 2,
+    } as Resource;
+    expect(declarationEnd(vpc, source)).toBe(4);
+  });
+  it("uses the parser range for a local, and falls back without one", () => {
+    const local = { id: "local.a", block: "local", line: 2, endLine: 3 };
+    expect(declarationEnd(local as Resource, source)).toBe(3);
+    const old = { id: "aws_vpc.main", block: "resource", line: 1 };
+    expect(declarationEnd(old as Resource, source)).toBe(4);
   });
 });
