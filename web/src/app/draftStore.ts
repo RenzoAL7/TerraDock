@@ -63,6 +63,33 @@ export interface DraftOffer {
   entries: StoredDraft[];
 }
 
+/**
+ * Split what `load` found into drafts to offer and copies to forget because
+ * the file already has that text. Entries this tab wrote, and entries of any
+ * tab heard from during this page's life (it may still be open), are neither
+ * offered nor removed.
+ */
+export function recoverable(
+  found: readonly StoredDraft[],
+  context: {
+    tab: string;
+    owns: (key: string) => boolean;
+    heard: ReadonlySet<string>;
+    files: readonly { path: string; content: string }[];
+  },
+) {
+  const offers: StoredDraft[] = [];
+  const stale: StoredDraft[] = [];
+  for (const entry of found) {
+    if (context.owns(entry.key) || entry.tab === context.tab) continue;
+    if (entry.tab !== undefined && context.heard.has(entry.tab)) continue;
+    const file = context.files.find((f) => f.path === entry.file);
+    if (file?.content === entry.content) stale.push(entry);
+    else offers.push(entry);
+  }
+  return { offers, stale };
+}
+
 /** Group entries by file, newest file and newest entry first. */
 export function groupOffers(entries: readonly StoredDraft[]): DraftOffer[] {
   const byFile = new Map<string, StoredDraft[]>();
@@ -102,13 +129,21 @@ export class DraftStore {
     return this.backend !== null;
   }
 
-  /** Drafts saved for a project, newest first, after dropping expired ones. */
-  async load(instanceRoot: string, projectPath: string) {
+  /**
+   * Drafts saved for a project, newest first, after dropping expired ones.
+   * Entries of `keepTabs` (tabs still open) are never dropped here.
+   */
+  async load(
+    instanceRoot: string,
+    projectPath: string,
+    keepTabs: ReadonlySet<string> = new Set(),
+  ) {
     const entries = await this.attempt(() => this.backend!.all(), []);
     const limit = this.now() - DRAFT_TTL;
     const found: StoredDraft[] = [];
     for (const entry of entries) {
-      if (!(entry.savedAt >= limit)) {
+      const open = entry.tab !== undefined && keepTabs.has(entry.tab);
+      if (!(entry.savedAt >= limit) && !open) {
         await this.attempt(() => this.backend!.remove(entry.key), undefined);
         continue;
       }
@@ -175,14 +210,16 @@ export class DraftStore {
 
   /**
    * Remove every stored draft of this browser profile except the ones this
-   * tab is keeping for its open drafts. Resolves to how many were removed.
+   * tab is keeping for its open drafts and those of `keepTabs` (other tabs
+   * still open). Resolves to how many were removed.
    */
-  clear() {
+  clear(keepTabs: ReadonlySet<string> = new Set()) {
     return this.serial(async () => {
       const entries = await this.attempt(() => this.backend!.all(), []);
       let removed = 0;
       for (const entry of entries) {
         if (this.written.has(entry.key)) continue;
+        if (entry.tab !== undefined && keepTabs.has(entry.tab)) continue;
         await this.attempt(() => this.backend!.remove(entry.key), undefined);
         if (!this.backend) break;
         removed++;

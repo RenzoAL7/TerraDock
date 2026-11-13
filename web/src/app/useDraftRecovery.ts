@@ -1,13 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { Draft, Project, Session } from "../lib/types";
 import {
   DraftStore,
   groupOffers,
   openIndexedDb,
   projectLocation,
+  recoverable,
   TAB_ID,
   type StoredDraft,
 } from "./draftStore";
+import type { DraftPresence } from "./useWorkspace";
 
 /** Quiet period after the last keystroke before drafts reach the profile. */
 const PERSIST_DELAY = 400;
@@ -29,6 +38,7 @@ export function useDraftRecovery(
   session: Session | null,
   project: Project | null,
   drafts: Record<string, Draft>,
+  presence: RefObject<DraftPresence | null>,
 ) {
   const [offers, setOffers] = useState<StoredDraft[]>([]);
   const locations = useRef(new Map<string, string>());
@@ -50,23 +60,25 @@ export function useDraftRecovery(
     if (!root || location === undefined) return;
     let active = true;
     void draftStore().then(async (store) => {
-      const found = await store.load(root, location);
+      // Let open tabs answer first: their drafts are not leftovers.
+      await presence.current?.settled();
+      const heard = presence.current?.heardTabs() ?? new Set<string>();
+      const found = await store.load(root, location, heard);
       if (!active) return;
-      const files = projectRef.current?.files ?? [];
-      const offered: StoredDraft[] = [];
-      for (const entry of found) {
-        if (store.owns(entry.key) || entry.tab === store.tab) continue;
-        // Nothing to recover when the file already has the draft's text.
-        if (files.find((f) => f.path === entry.file)?.content === entry.content)
-          void store.discard(entry.key);
-        else offered.push(entry);
-      }
+      const { offers: offered, stale } = recoverable(found, {
+        tab: store.tab,
+        owns: (key) => store.owns(key),
+        heard,
+        files: projectRef.current?.files ?? [],
+      });
+      // Nothing to recover when the file already has the draft's text.
+      for (const entry of stale) void store.discard(entry.key);
       setOffers(offered);
     });
     return () => {
       active = false;
     };
-  }, [root, location, projectId]);
+  }, [root, location, projectId, presence]);
 
   // Typing a new draft for a file does not touch what another tab stored for
   // it: this tab writes under its own key and the offer stays until the user
@@ -119,8 +131,9 @@ export function useDraftRecovery(
   /** Remove what other tabs left in this browser; resolves to the count. */
   const clearStored = useCallback(async () => {
     setOffers([]);
-    return (await draftStore()).clear();
-  }, []);
+    // Copies of tabs that are still open stay: they would not rewrite them.
+    return (await draftStore()).clear(presence.current?.liveTabs());
+  }, [presence]);
   // Several closed tabs may have left a draft of the same file.
   const groups = useMemo(() => groupOffers(offers), [offers]);
   return { offers: groups, restore, discard, clearStored };

@@ -4,6 +4,7 @@ import {
   DraftStore,
   groupOffers,
   projectLocation,
+  recoverable,
   storageKey,
   type DraftBackend,
   type StoredDraft,
@@ -145,6 +146,68 @@ describe("DraftStore", () => {
     expect(await store.clear()).toBe(2);
     expect([...entries.values()].map((e) => e.content)).toEqual(["mine"]);
     expect(await new DraftStore(null).clear()).toBe(0);
+  });
+
+  it("does not clear the copies of tabs that are still open", async () => {
+    const { entries, backend } = memory();
+    await new DraftStore(backend, Date.now, "open").persist(
+      "/root",
+      { "main.tf": draft("other tab") },
+      locations,
+    );
+    await new DraftStore(backend, Date.now, "closed").persist(
+      "/root",
+      { "net.tf": draft("left") },
+      locations,
+    );
+    const store = new DraftStore(backend, Date.now, "me");
+    expect(await store.clear(new Set(["open"]))).toBe(1);
+    expect([...entries.values()].map((e) => e.tab)).toEqual(["open"]);
+  });
+
+  it("never expires the draft of a tab that is still open", async () => {
+    const { entries, backend } = memory();
+    let now = 0;
+    await new DraftStore(backend, () => now, "open").persist(
+      "/root",
+      { "main.tf": draft("old but open") },
+      locations,
+    );
+    now = DRAFT_TTL + 1;
+    const store = new DraftStore(backend, () => now, "me");
+    expect(await store.load("/root", "/root/app", new Set(["open"]))).toEqual([
+      expect.objectContaining({ tab: "open" }),
+    ]);
+    expect(entries.size).toBe(1);
+  });
+
+  it("offers only drafts of tabs not heard from, and forgets ones already on disk", () => {
+    const entry = (tab: string | undefined, file: string, content: string) =>
+      ({
+        key: `${tab}-${file}`,
+        tab,
+        file,
+        content,
+        savedAt: 1,
+      }) as StoredDraft;
+    const found = [
+      entry("mine", "main.tf", "x"),
+      entry("open", "main.tf", "y"),
+      entry("closed", "main.tf", "z"),
+      entry("closed", "net.tf", "on disk"),
+      entry(undefined, "old.tf", "legacy"),
+    ];
+    const { offers, stale } = recoverable(found, {
+      tab: "mine",
+      owns: () => false,
+      heard: new Set(["open"]),
+      files: [{ path: "net.tf", content: "on disk" }],
+    });
+    expect(offers.map((e) => e.key)).toEqual([
+      "closed-main.tf",
+      "undefined-old.tf",
+    ]);
+    expect(stale.map((e) => e.key)).toEqual(["closed-net.tf"]);
   });
 
   it("drops drafts older than seven days when reading", async () => {

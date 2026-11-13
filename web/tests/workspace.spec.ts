@@ -955,7 +955,7 @@ test("la ayuda borra los borradores guardados en este navegador", async ({
   // Nothing left: it says so instead of pretending to delete something.
   await clear.click();
   await expect(
-    page.getByText("No había borradores guardados de otras pestañas."),
+    page.getByText("No había borradores guardados de pestañas cerradas."),
   ).toBeVisible();
 });
 

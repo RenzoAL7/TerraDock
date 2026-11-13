@@ -136,8 +136,12 @@ export default function App() {
   const live = useLivePreview(project, drafts, 60, urgentPreview);
   const floci = useFloci(project?.id, project?.revision, view === "deploy");
   // Drafts survive closing or reloading the tab (browser profile, 7 days).
-  const recovery = useDraftRecovery(session, project, drafts);
-  const otherTabs = useOtherTabDrafts(session, project, drafts);
+  const { files: otherTabs, presence } = useOtherTabDrafts(
+    session,
+    project,
+    drafts,
+  );
+  const recovery = useDraftRecovery(session, project, drafts, presence);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
@@ -1223,7 +1227,7 @@ export default function App() {
                     .then((count) =>
                       setCleared(
                         count === 0
-                          ? "No había borradores guardados de otras pestañas."
+                          ? "No había borradores guardados de pestañas cerradas."
                           : count === 1
                             ? "Se borró 1 borrador guardado."
                             : `Se borraron ${count} borradores guardados.`,

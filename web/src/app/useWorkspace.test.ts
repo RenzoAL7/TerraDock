@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DraftPresence } from "./useWorkspace";
+import { DraftPresence, PRESENCE_WINDOW } from "./useWorkspace";
 
 let open: DraftPresence[] = [];
 let channels = 0;
@@ -71,6 +71,29 @@ describe("DraftPresence", () => {
     await until(() => a.seen().has("net.tf"));
     a.presence.reopen(null);
     expect(a.seen().size).toBe(0);
+  });
+
+  it("knows which tabs answered its hello, and which said goodbye", async () => {
+    const name = `presence-${++channels}`;
+    const a = tab(name);
+    a.presence.publish(["main.tf"]);
+    const started = Date.now();
+    const late = tab(name);
+    // Recovery waits for this before offering drafts left in storage.
+    await late.presence.settled();
+    expect(Date.now() - started).toBeGreaterThanOrEqual(PRESENCE_WINDOW - 5);
+    expect(late.presence.heardTabs().has(a.presence.tab)).toBe(true);
+    expect(late.presence.liveTabs().has(a.presence.tab)).toBe(true);
+    a.presence.close();
+    await until(() => !late.presence.liveTabs().has(a.presence.tab));
+    // A tab heard during this page's life is still not treated as a leftover.
+    expect(late.presence.heardTabs().has(a.presence.tab)).toBe(true);
+  });
+
+  it("settles at once without BroadcastChannel", async () => {
+    const alone = new DraftPresence(null, () => undefined);
+    await alone.settled();
+    expect(alone.heardTabs().size).toBe(0);
   });
 
   it("ignores malformed messages and works without BroadcastChannel", async () => {

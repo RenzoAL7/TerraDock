@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { api, errorMessage } from "../lib/api";
 import type { Draft, Project, Session } from "../lib/types";
 import { mutationResult, ProjectInbox } from "./mergeProject";
@@ -158,9 +165,17 @@ function presenceMessage(data: unknown): PresenceMessage | null {
  * and keeps the set of draft keys they announce. Without BroadcastChannel it
  * does nothing. Only keys travel between tabs, never file contents.
  */
+/** How long a new tab listens for the others before trusting what it heard. */
+export const PRESENCE_WINDOW = 100;
+
 export class DraftPresence {
   private mine: string[] = [];
   private others = new Map<string, string[]>();
+  /** Every other tab heard from since this page loaded. */
+  private heard = new Set<string>();
+  /** Tabs that said goodbye (closed or left the page). */
+  private gone = new Set<string>();
+  private ready: Promise<void> = Promise.resolve();
 
   constructor(
     private channel: PresenceChannel | null,
@@ -187,9 +202,29 @@ export class DraftPresence {
   }
 
   private listen(channel: PresenceChannel | null) {
-    if (!channel) return;
+    if (!channel) {
+      this.ready = Promise.resolve();
+      return;
+    }
     channel.onmessage = (event: MessageEvent) => this.receive(event.data);
     this.post({ kind: "hello", tab: this.tab });
+    // Open tabs answer the hello right away; give them a moment.
+    this.ready = new Promise((resolve) => setTimeout(resolve, PRESENCE_WINDOW));
+  }
+
+  /** Resolves once the other open tabs had time to answer this tab's hello. */
+  settled() {
+    return this.ready;
+  }
+
+  /** Tabs heard from since this page loaded, open or not. */
+  heardTabs(): ReadonlySet<string> {
+    return new Set(this.heard);
+  }
+
+  /** Tabs heard from that have not said goodbye. */
+  liveTabs(): ReadonlySet<string> {
+    return new Set([...this.heard].filter((tab) => !this.gone.has(tab)));
   }
 
   publish(keys: string[]) {
@@ -216,6 +251,9 @@ export class DraftPresence {
   private receive(data: unknown) {
     const message = presenceMessage(data);
     if (!message || message.tab === this.tab) return;
+    this.heard.add(message.tab);
+    if (message.kind === "bye") this.gone.add(message.tab);
+    else this.gone.delete(message.tab);
     if (message.kind === "hello") {
       // A new tab asks who is editing what.
       if (this.mine.length)
@@ -237,7 +275,11 @@ export function useOtherTabDrafts(
   session: Session | null,
   project: Project | null,
   drafts: Record<string, Draft>,
-): ReadonlySet<string> {
+): {
+  files: ReadonlySet<string>;
+  /** This tab's presence, for recovery to tell open tabs from closed ones. */
+  presence: RefObject<DraftPresence | null>;
+} {
   const [others, setOthers] = useState<ReadonlySet<string>>(new Set());
   const presence = useRef<DraftPresence | null>(null);
   useEffect(() => {
@@ -273,11 +315,12 @@ export function useOtherTabDrafts(
         .map(([file]) => draftKey(root, location, file)),
     );
   }, [root, location, projectId, drafts]);
-  return useMemo(() => {
+  const files = useMemo(() => {
     if (!root || location === undefined) return new Set<string>();
-    const files = new Set<string>();
+    const found = new Set<string>();
     for (const file of project?.files ?? [])
-      if (others.has(draftKey(root, location, file.path))) files.add(file.path);
-    return files;
+      if (others.has(draftKey(root, location, file.path))) found.add(file.path);
+    return found;
   }, [others, root, location, project?.files]);
+  return { files, presence };
 }
