@@ -54,6 +54,8 @@ import { api, errorMessage, liveApi } from "../lib/api";
 import type { Draft, Project, Property, Resource } from "../lib/types";
 
 const CodeEditor = lazy(() => import("../features/editor/CodeEditor"));
+// Only loaded when a file changed on disk under a draft.
+const ConflictDiff = lazy(() => import("../features/editor/ConflictDiff"));
 type View = "architecture" | "code" | "split" | "analysis" | "deploy";
 const AUTOSAVE_KEY = "terradock.autosave";
 const AUTOSAVE_DELAY = 600;
@@ -137,6 +139,9 @@ export default function App() {
   projectRef.current = project;
   const applyQueue = useRef(Promise.resolve(""));
   const savingRef = useRef(false);
+  // Our own save reaches this tab over SSE before its HTTP response; until
+  // then the draft looks based on an old revision but is not a conflict.
+  const [savingPath, setSavingPath] = useState("");
 
   const saveDraft = useCallback(
     async (path: string) => {
@@ -150,6 +155,7 @@ export default function App() {
       )
         return;
       savingRef.current = true;
+      setSavingPath(path);
       try {
         const next = await perform(() =>
           api.save(
@@ -163,6 +169,7 @@ export default function App() {
           setDrafts((latest) => afterFileSave(latest, path, captured, next));
       } finally {
         savingRef.current = false;
+        setSavingPath("");
       }
     },
     [perform],
@@ -307,9 +314,14 @@ export default function App() {
   const file =
     project.files.find((f) => f.path === filePath) ?? project.files[0];
   const draft = file && drafts[file.path];
-  const conflict =
-    draft &&
-    (draft.projectId !== project.id || draft.baseRevision !== file.revision);
+  const projectConflict = !!draft && draft.projectId !== project.id;
+  // The file changed on disk under the draft: compare instead of editing.
+  const revisionConflict =
+    !!draft &&
+    !projectConflict &&
+    draft.baseRevision !== file.revision &&
+    savingPath !== file.path;
+  const conflict = projectConflict || revisionConflict;
   const orphanDrafts = Object.entries(drafts).filter(
     ([path, d]) =>
       d.projectId !== project.id || !project.files.some((f) => f.path === path),
@@ -377,6 +389,40 @@ export default function App() {
     urgentPreview.current = true;
     setDrafts(next);
     code(entry.file);
+  };
+  const discardDraft = (path: string) => {
+    const next = without(draftsRef.current, path);
+    draftsRef.current = next;
+    setDrafts(next);
+    // Inspector text for this file belonged to the discarded draft.
+    const inFile = new Set(
+      live.resources.filter((r) => r.file === path).map((r) => r.id),
+    );
+    setProperties((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(
+          ([key]) => !inFile.has(key.split(":")[0]),
+        ),
+      ),
+    );
+  };
+  /** Put a draft on top of the file now on disk, and optionally save it. */
+  const rebaseDraft = (path: string, content: string, save: boolean) => {
+    const saved = project.files.find((f) => f.path === path);
+    if (!saved) return;
+    const next = { ...draftsRef.current };
+    if (content === saved.content) delete next[path];
+    else
+      next[path] = {
+        projectId: project.id,
+        content,
+        baseRevision: saved.revision,
+        baseContent: saved.content,
+      };
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    if (save && next[path]) void saveDraft(path);
   };
   const switchWorkspace = (action: () => void) => {
     if (hasUnsaved) setPending(() => action);
@@ -446,26 +492,7 @@ export default function App() {
                 <Download size={14} />
               </button>
               {draft && (
-                <button
-                  onClick={() => {
-                    const next = without(drafts, file.path);
-                    draftsRef.current = next;
-                    setDrafts(next);
-                    // Inspector text for this file belonged to the discarded draft.
-                    const inFile = new Set(
-                      live.resources
-                        .filter((r) => r.file === file.path)
-                        .map((r) => r.id),
-                    );
-                    setProperties((current) =>
-                      Object.fromEntries(
-                        Object.entries(current).filter(
-                          ([key]) => !inFile.has(key.split(":")[0]),
-                        ),
-                      ),
-                    );
-                  }}
-                >
+                <button onClick={() => discardDraft(file.path)}>
                   Descartar borrador
                 </button>
               )}
@@ -487,54 +514,66 @@ export default function App() {
               </button>
             </div>
           </div>
-          {conflict && (
+          {projectConflict && (
             <div className="conflict-banner" role="alert">
-              Hay una versión nueva del archivo o cambió el proyecto. Tu
-              borrador se conserva. Descárgalo antes de descartarlo para cargar
-              la versión actual.
+              Cambió el proyecto abierto. Tu borrador se conserva: descárgalo
+              antes de descartarlo para cargar la versión actual.
             </div>
           )}
           <div className="editor-content">
             <Suspense
               fallback={<div className="editor-loading">Cargando editor…</div>}
             >
-              <CodeEditor
-                key={`${project.id}:${file.path}`}
-                path={`${project.id}/${file.path}`}
-                value={editorContent}
-                line={line}
-                revealKey={reveal}
-                highlight={linked}
-                diagnostics={live.diagnostics.map((d) => ({
-                  ...d,
-                  file: `${project.id}/${d.file}`,
-                }))}
-                onSave={saveFile}
-                onCursor={(cursor) => {
-                  // Code → graph: the caret selects the resource it is in.
-                  const target = resourceAtLine(
-                    live.resources,
-                    file.path,
-                    editorContent,
-                    cursor,
-                  );
-                  if (target && target.id !== selected) {
-                    setSelected(target.id);
-                    focusOn(target.id);
-                  }
-                }}
-                onChange={(content) => {
-                  const next = withDraft(
-                    draftsRef.current,
-                    file.path,
-                    content,
-                    file,
-                    project.id,
-                  );
-                  draftsRef.current = next;
-                  setDrafts(next);
-                }}
-              />
+              {revisionConflict ? (
+                <ConflictDiff
+                  key={`${project.id}:${file.path}:${draft.baseRevision}`}
+                  file={file.path}
+                  base={draft.baseContent}
+                  mine={draft.content}
+                  disk={file.content}
+                  onKeepMine={(text) => rebaseDraft(file.path, text, true)}
+                  onUseDisk={() => discardDraft(file.path)}
+                  onApply={(text) => rebaseDraft(file.path, text, false)}
+                />
+              ) : (
+                <CodeEditor
+                  key={`${project.id}:${file.path}`}
+                  path={`${project.id}/${file.path}`}
+                  value={editorContent}
+                  line={line}
+                  revealKey={reveal}
+                  highlight={linked}
+                  diagnostics={live.diagnostics.map((d) => ({
+                    ...d,
+                    file: `${project.id}/${d.file}`,
+                  }))}
+                  onSave={saveFile}
+                  onCursor={(cursor) => {
+                    // Code → graph: the caret selects the resource it is in.
+                    const target = resourceAtLine(
+                      live.resources,
+                      file.path,
+                      editorContent,
+                      cursor,
+                    );
+                    if (target && target.id !== selected) {
+                      setSelected(target.id);
+                      focusOn(target.id);
+                    }
+                  }}
+                  onChange={(content) => {
+                    const next = withDraft(
+                      draftsRef.current,
+                      file.path,
+                      content,
+                      file,
+                      project.id,
+                    );
+                    draftsRef.current = next;
+                    setDrafts(next);
+                  }}
+                />
+              )}
             </Suspense>
           </div>
         </>

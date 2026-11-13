@@ -390,10 +390,87 @@ test("bloquea un guardado obsoleto y conserva el borrador y el archivo externo",
   expect(rejected.status()).toBe(409);
   expect(await rejected.json()).toMatchObject({ code: "revision_conflict" });
   expect(await readFile(file, "utf8")).toBe(external);
-  await expect(page.locator(".view-lines")).toContainText("t3.medium");
+  // The draft stays, now compared with the disk version.
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "t3.large",
+  );
   await expect(
     page.getByRole("button", { name: "Descartar borrador", exact: true }),
   ).toBeEnabled();
+});
+
+test("un conflicto se compara y «Conservar el mío» guarda sobre la revisión nueva sin pisar el cambio externo", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  // Another program changes a different block of the same file.
+  const external = localSource.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(file, external);
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.getByRole("alert")).toContainText(
+    "main.tf cambió fuera de TerraDock",
+  );
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
+  const onDisk = (await project(request)).files[0];
+  expect(onDisk.content).toBe(external);
+  const saved = page.waitForRequest(
+    (r) => r.url().endsWith("/api/files") && r.method() === "PUT",
+  );
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({
+    expectedRevision: onDisk.revision,
+  });
+  const merged = external.replace('"t3.micro"', '"t3.medium"');
+  await expect.poll(() => readFile(file, "utf8")).toBe(merged);
+  await expect(diff).toHaveCount(0);
+  await expect(page.getByTestId("sync-status")).toContainText(
+    "Sincronizado con el archivo",
+  );
+  await expect(page.locator(".view-lines")).toContainText("10.0.9.0/24");
+});
+
+test("si el borrador y el disco cambian la misma línea, se edita el resultado antes de guardarlo", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  const external = localSource.replace('"t3.micro"', '"t3.large"');
+  await writeFile(file, external);
+  const diff = page.getByTestId("conflict-diff");
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  // Nothing is written while both versions touch the same line.
+  await expect(diff.getByRole("alert")).toContainText("mismas líneas");
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "<<<<<<< tu borrador",
+  );
+  expect(await readFile(file, "utf8")).toBe(external);
+  await diff.getByRole("button", { name: "Usar el del disco" }).click();
+  await expect(diff).toHaveCount(0);
+  await expect(page.locator(".view-lines")).toContainText("t3.large");
+  expect(await readFile(file, "utf8")).toBe(external);
 });
 
 test("conserva lo escrito mientras llega la respuesta de un guardado anterior", async ({
@@ -451,6 +528,8 @@ test("conserva lo escrito mientras llega la respuesta de un guardado anterior", 
       (await project(request)).files.find((file) => file.path === "main.tf")!
         .content,
     ).toBe(firstContent);
+    // Our own save arrives over SSE first: it is not a conflict.
+    await expect(page.getByTestId("conflict-diff")).toHaveCount(0);
     await replaceEditorContent(page, secondContent);
     const delivered = page.waitForResponse(
       (response) =>
@@ -660,6 +739,15 @@ test("al recargar con el archivo cambiado por fuera se ofrece comparar", async (
       .filter({ hasText: /cambió|conflicto/i })
       .first(),
   ).toBeVisible();
+  // The comparison is the first Monaco view after the reload: it must load
+  // from the local bundle and show both versions.
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
   expect(await readFile(join(directory, "main.tf"), "utf8")).toBe(external);
 });
 

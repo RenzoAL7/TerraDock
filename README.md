@@ -85,7 +85,7 @@ Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así 
   - Lo que cambias en el inspector se escribe en el código al momento.
   - Si editas el archivo con otro programa (VS Code, vim…), el cambio aparece al instante.
 - **Navegar.** Al seleccionar un nodo se marca su bloque en el código. Al mover el cursor por el código se selecciona su nodo.
-- **Guardar sin pensar.** El autoguardado escribe el archivo cuando el HCL es válido. Si otro programa cambió el archivo, se detiene y conserva tu borrador. Puedes desactivarlo y guardar con ⌘/Ctrl + S.
+- **Guardar sin pensar.** El autoguardado escribe el archivo cuando el HCL es válido. Si otro programa cambió el archivo, se detiene, conserva tu borrador y te muestra las dos versiones para conservar la tuya encima de la nueva, usar la del disco o editar el resultado. Los borradores sin guardar sobreviven a cerrar o recargar la pestaña durante 7 días. Puedes desactivarlo y guardar con ⌘/Ctrl + S.
 - **Ver errores.** Los errores de sintaxis aparecen en el editor. Mientras el HCL es inválido, el diagrama mantiene la última versión válida.
 
 Funciona con proyectos grandes: con 300 recursos, un cambio llega al diagrama en menos de 200 ms ([mediciones](docs/performance.md)).

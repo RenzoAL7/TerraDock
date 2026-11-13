@@ -43,7 +43,15 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 
 La demo comprueba revisiones para detectar cambios sobre una versión distinta del archivo. Esto ayuda a evitar sobrescrituras obsoletas; no equivale a completar todos los escenarios de edición colaborativa, recuperación tras fallos de alimentación o modificaciones simultáneas de otros programas.
 
-La escritura atómica y la comprobación previa tienen límites frente a herramientas externas que no comparten el mismo mecanismo de coordinación. La recuperación de historial, la resolución avanzada de conflictos y el cierre de todos los escenarios de la etapa 3 siguen pendientes. El repositorio debe conservar evidencia de los escenarios concretos que sí se prueban.
+La escritura atómica y la comprobación previa tienen límites frente a herramientas externas que no comparten el mismo mecanismo de coordinación. La recuperación de historial y el cierre de todos los escenarios de la etapa 3 siguen pendientes. El repositorio debe conservar evidencia de los escenarios concretos que sí se prueban.
+
+Cuando un archivo cambia en disco mientras tiene un borrador, el editor muestra una comparación (disco a la izquierda, borrador a la derecha) con tres acciones:
+
+- **Conservar el mío** aplica tus cambios sobre la versión nueva del disco (fusión de tres vías por líneas) y la guarda con la revisión nueva. Solo ocurre si tus cambios y los externos no tocan las mismas líneas ni líneas contiguas; si las tocan, no se escribe nada y se abre el resultado con marcas `<<<<<<<`, `=======` y `>>>>>>>` para resolverlo a mano.
+- **Usar el del disco** descarta el borrador.
+- **Editar el resultado** permite corregir el texto final; al aplicarlo queda como borrador sobre la revisión nueva y sigue el flujo normal de guardado.
+
+La fusión compara líneas de texto, no la estructura HCL: dos cambios en líneas distintas de un mismo bloque se combinan aunque juntos no tengan sentido para Terraform. Con diferencias muy extensas (más de 2.000 líneas distintas) no se intenta combinar y se pide resolver a mano.
 
 El guardado prepara un archivo temporal, conserva los bits de permisos, sincroniza su contenido y vuelve a comprobar la revisión antes de reemplazar el original. La comprobación y el reemplazo no son una transacción compartida con otros editores: existe una ventana de carrera. No se promete preservar todos los metadatos del sistema de archivos ni recuperación frente a pérdida de alimentación.
 
