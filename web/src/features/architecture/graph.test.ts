@@ -5,6 +5,7 @@ import {
   categoryNames,
   laneOf,
   nodeSignature,
+  placeAdded,
   shortType,
 } from "./graph";
 
@@ -344,5 +345,46 @@ describe("nodeSignature", () => {
     expect(nodeSignature(withProperty(undefined, "t3.large"))).not.toBe(
       nodeSignature(withProperty(undefined, "t3.micro")),
     );
+  });
+});
+
+describe("placing added nodes", () => {
+  it("puts new top-level nodes to the right of the kept ones, without overlap", () => {
+    const { nodes } = buildGraph(
+      [
+        resource("aws_vpc.main"),
+        resource("aws_subnet.app", "aws_vpc.main"),
+        resource("aws_s3_bucket.logs"),
+        resource("aws_vpc.edge"),
+      ],
+      [],
+      "",
+    );
+    const placed = placeAdded(
+      nodes,
+      new Set(["aws_vpc.edge", "aws_s3_bucket.logs"]),
+    );
+    const kept = placed.find((n) => n.id === "aws_vpc.main")!;
+    const right = kept.position.x + Number(kept.style!.width);
+    const vpc = placed.find((n) => n.id === "aws_vpc.edge")!;
+    const bucket = placed.find((n) => n.id === "aws_s3_bucket.logs")!;
+    expect(vpc.position.x).toBeGreaterThan(right);
+    expect(bucket.position.x).toBe(vpc.position.x);
+    // Stacked in the declaration order, one below the other.
+    const [first, second] = [vpc, bucket].sort(
+      (a, b) => a.position.y - b.position.y,
+    );
+    expect(second.position.y).toBeGreaterThanOrEqual(
+      first.position.y + Number(first.style!.height),
+    );
+    // Nested and kept nodes are untouched.
+    expect(placed.find((n) => n.id === "aws_subnet.app")).toBe(
+      nodes.find((n) => n.id === "aws_subnet.app"),
+    );
+    expect(kept).toBe(nodes.find((n) => n.id === "aws_vpc.main"));
+  });
+  it("leaves the layout alone when every node is new", () => {
+    const { nodes } = buildGraph([resource("aws_vpc.main")], [], "");
+    expect(placeAdded(nodes, new Set(["aws_vpc.main"]))).toBe(nodes);
   });
 });

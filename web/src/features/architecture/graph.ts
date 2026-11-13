@@ -155,6 +155,29 @@ export function buildGraph(
   return { nodes, edges };
 }
 
+/**
+ * Puts new top-level nodes in a free column to the right of the nodes that
+ * kept their position, stacked from the top. Nested nodes are relative to
+ * their scope and stay where the layout put them.
+ */
+export function placeAdded(
+  nodes: ResourceNode[],
+  added: ReadonlySet<string>,
+): ResourceNode[] {
+  let right = -Infinity;
+  for (const n of nodes)
+    if (!n.parentId && !added.has(n.id))
+      right = Math.max(right, n.position.x + Number(n.style?.width ?? 214));
+  if (right === -Infinity) return nodes;
+  let y = 30;
+  return nodes.map((n) => {
+    if (n.parentId || !added.has(n.id)) return n;
+    const placed = { ...n, position: { x: right + 60, y } };
+    y += Number(n.style?.height ?? 96) + 34;
+    return placed;
+  });
+}
+
 export const categoryNames: Record<string, string> = {
   network: "Networking",
   compute: "Compute",
