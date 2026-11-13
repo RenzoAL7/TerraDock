@@ -3,6 +3,7 @@ import {
   type Directory,
   type FlociJob,
   type FlociStatus,
+  type NewResource,
   type Preview,
   type Project,
   type Session,
@@ -12,6 +13,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    /** Stable code from the server, e.g. `revision_conflict`. */
+    public readonly code = "",
   ) {
     super(message);
   }
@@ -33,10 +36,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       .json()
       .catch(() => ({ error: `Error ${response.status}` }))) as {
       error?: string;
+      code?: string;
     };
     throw new ApiError(
       body.error || "No se pudo completar la operación.",
       response.status,
+      body.code,
     );
   }
   return response.json() as Promise<T>;
@@ -87,6 +92,16 @@ export const api = {
         expectedRevision,
       }),
     }),
+  /** Writes a new .tf file holding only `resource`; never replaces a file. */
+  createResourceFile: (
+    projectId: string,
+    path: string,
+    resource: NewResource,
+  ) =>
+    projectRequest("/resource-file", {
+      method: "POST",
+      body: JSON.stringify({ projectId, path, resource }),
+    }),
 };
 
 export const liveApi = {
@@ -114,6 +129,24 @@ export const liveApi = {
         value,
       }),
     }),
+  /** Appends `resource` to unsaved content; the caller keeps it as a draft. */
+  resourceDraft: (
+    projectId: string,
+    path: string,
+    content: string,
+    expectedRevision: string,
+    resource: NewResource,
+  ) =>
+    request<{ content: string; line: number }>("/resource-draft", {
+      method: "POST",
+      body: JSON.stringify({
+        projectId,
+        path,
+        content,
+        expectedRevision,
+        resource,
+      }),
+    }),
 };
 
 export const flociApi = {
@@ -135,7 +168,12 @@ export const flociApi = {
 };
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.status === 409)
+  // A name already taken is a 409 too, but its own message says what to do.
+  if (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.code !== "file_exists"
+  )
     return "El archivo cambió mientras editabas. Conservamos tu borrador: revisa la versión actual antes de guardar.";
   return error instanceof Error
     ? error.message

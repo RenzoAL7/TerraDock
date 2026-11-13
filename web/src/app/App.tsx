@@ -51,10 +51,20 @@ import {
   type PropertyDraft,
 } from "../features/inspector/Inspector";
 import { FolderPicker } from "../features/project/FolderPicker";
+import {
+  CreateResourceDialog,
+  type CreateTarget,
+} from "../features/create/CreateResourceDialog";
 import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
 import { api, errorMessage, liveApi } from "../lib/api";
-import type { Draft, Project, Property, Resource } from "../lib/types";
+import type {
+  Draft,
+  NewResource,
+  Project,
+  Property,
+  Resource,
+} from "../lib/types";
 
 const CodeEditor = lazy(() => import("../features/editor/CodeEditor"));
 // Only loaded when a file changed on disk under a draft.
@@ -85,6 +95,15 @@ function ago(timestamp: number) {
   const hours = Math.round(minutes / 60);
   if (hours > -24) return relativeTime.format(hours, "hour");
   return relativeTime.format(Math.round(hours / 24), "day");
+}
+/** The last resource created from the diagram, for the undo notice. */
+interface Created {
+  id: string;
+  path: string;
+  projectId: string;
+  /** File text before the block was added; null for a new file. */
+  before: string | null;
+  after: string;
 }
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
@@ -120,7 +139,10 @@ export default function App() {
   );
   const [folder, setFolder] = useState(false),
     [examples, setExamples] = useState(false),
-    [help, setHelp] = useState(false);
+    [help, setHelp] = useState(false),
+    [creating, setCreating] = useState(false),
+    [creatingDraft, setCreatingDraft] = useState(false);
+  const [created, setCreated] = useState<Created | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [properties, setProperties] = useState<Record<string, PropertyDraft>>(
     {},
@@ -252,6 +274,82 @@ export default function App() {
     },
     [],
   );
+
+  // Diagram → code: append a new resource to the file draft, like an
+  // inspector edit. The draft reaches disk through autosave or a save, with
+  // the usual revision check.
+  const createDraft = useCallback((path: string, spec: NewResource) => {
+    const job = applyQueue.current.then(async () => {
+      const current = projectRef.current;
+      const file = current?.files.find((f) => f.path === path);
+      if (!current || !file)
+        return { error: "El archivo ya no está disponible." };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const base = draftsRef.current[path];
+        const mine = base?.projectId === current.id ? base : undefined;
+        const content = mine ? mine.content : file.content;
+        try {
+          const result = await liveApi.resourceDraft(
+            current.id,
+            path,
+            content,
+            mine ? mine.baseRevision : file.revision,
+            spec,
+          );
+          const latest = draftsRef.current[path];
+          const latestContent =
+            latest?.projectId === current.id ? latest.content : file.content;
+          // Typing in the editor during the request: retry on fresh text.
+          if (latestContent !== content) continue;
+          const next = withDraft(
+            draftsRef.current,
+            path,
+            result.content,
+            file,
+            current.id,
+          );
+          draftsRef.current = next;
+          urgentPreview.current = true;
+          setDrafts(next);
+          return {
+            error: "",
+            line: result.line,
+            created: {
+              id: `${spec.type}.${spec.name}`,
+              path,
+              projectId: current.id,
+              before: content,
+              after: result.content,
+            },
+          };
+        } catch (reason) {
+          return { error: errorMessage(reason) };
+        }
+      }
+      return {
+        error:
+          "El código cambió mientras se creaba el recurso. Vuelve a intentarlo.",
+      };
+    });
+    applyQueue.current = job.then(
+      () => "",
+      () => "",
+    );
+    return job;
+  }, []);
+
+  // A created resource is centered once the live view includes it, after the
+  // canvas has fitted the split view it may have just switched to.
+  const pendingFocus = useRef("");
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id || !live?.resources.some((r) => r.id === id)) return;
+    const timer = window.setTimeout(() => {
+      pendingFocus.current = "";
+      setFocus((f) => ({ id, n: f.n + 1 }));
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [live]);
 
   // On wide screens, select a resource of whatever project the server opened.
   const initialSelection = useRef(false);
@@ -459,11 +557,100 @@ export default function App() {
     setDrafts(next);
     if (save && next[path]) void saveDraft(path);
   };
+  /** Select the new node and show its block next to the diagram. */
+  const showCreated = (id: string, path: string, targetLine: number) => {
+    setSelected(id);
+    pendingFocus.current = id;
+    setFilePath(path);
+    setLine(targetLine);
+    setReveal((n) => n + 1);
+    if (view !== "split") setView("split");
+  };
+  const createResource = async (request: {
+    resource: NewResource;
+    path: string;
+    newFile: boolean;
+  }) => {
+    const id = `${request.resource.type}.${request.resource.name}`;
+    setError("");
+    if (request.newFile) {
+      const next = await perform(() =>
+        api.createResourceFile(project.id, request.path, request.resource),
+      );
+      if (!next) return;
+      setCreating(false);
+      setCreated({
+        id,
+        path: request.path,
+        projectId: next.id,
+        before: null,
+        after: "",
+      });
+      showCreated(id, request.path, 1);
+      return;
+    }
+    setCreatingDraft(true);
+    try {
+      const result = await createDraft(request.path, request.resource);
+      if (result.error || !result.created) {
+        setError(result.error);
+        return;
+      }
+      setCreating(false);
+      setCreated(result.created);
+      showCreated(id, request.path, result.line);
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
+  /** Remove the block just created, if the file still ends exactly with it. */
+  const undoCreate = (entry: Created) => {
+    setCreated(null);
+    const current = projectRef.current;
+    const saved = current?.files.find((f) => f.path === entry.path);
+    if (!current || !saved || entry.before === null) return;
+    const base = draftsRef.current[entry.path];
+    const text = base?.projectId === current.id ? base.content : saved.content;
+    if (current.id !== entry.projectId || text !== entry.after) {
+      setError(
+        `${entry.path} cambió después de crear ${entry.id}. Quita el bloque en el código.`,
+      );
+      return;
+    }
+    const next = withDraft(
+      draftsRef.current,
+      entry.path,
+      entry.before,
+      saved,
+      current.id,
+    );
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    setSelected((id) => (id === entry.id ? "" : id));
+  };
+  // A file can receive a new resource unless its draft is in conflict.
+  const createTargets: CreateTarget[] = project.files
+    .filter((f) => f.path.endsWith(".tf"))
+    .map((f) => {
+      const d = drafts[f.path];
+      return {
+        path: f.path,
+        blocked: !d
+          ? undefined
+          : d.projectId !== project.id
+            ? "borrador de otro proyecto"
+            : d.baseRevision !== f.revision && savingPath !== f.path
+              ? "en conflicto con el disco"
+              : undefined,
+      };
+    });
   const switchWorkspace = (action: () => void) => {
     if (hasUnsaved) setPending(() => action);
     else action();
   };
   const adopt = (next: Project) => {
+    setCreated(null);
     setDrafts({});
     setProperties({});
     setSelected(defaultSelection(next));
@@ -722,11 +909,27 @@ export default function App() {
           ))}
         </nav>
       </div>
-      {error && !folder && (
+      {error && !folder && !creating && (
         <div className="global-message" role="alert">
           <TriangleAlert size={16} />
           <span>{error}</span>
           <button aria-label="Cerrar aviso" onClick={() => setError("")}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {created && created.projectId === project.id && (
+        <div className="global-message created-message" role="status">
+          <Check size={16} />
+          <span>
+            {created.before === null
+              ? `Se creó ${created.path} con ${created.id}.`
+              : `Se añadió ${created.id} al final de ${created.path}.`}
+          </span>
+          {created.before !== null && (
+            <button onClick={() => undoCreate(created)}>Deshacer</button>
+          )}
+          <button aria-label="Cerrar aviso" onClick={() => setCreated(null)}>
             <X size={15} />
           </button>
         </div>
@@ -957,6 +1160,10 @@ export default function App() {
                 focus={focus}
                 resetKey={`${project.id}:${view}`}
                 marks={marks}
+                onCreate={() => {
+                  setError("");
+                  setCreating(true);
+                }}
               />
             )}
             {(view === "code" || view === "split") && editor}
@@ -1121,6 +1328,26 @@ export default function App() {
               adopt(next);
               setFolder(false);
             }
+          }}
+        />
+      )}
+      {creating && (
+        <CreateResourceDialog
+          resources={live.resources}
+          files={createTargets}
+          defaultFile={
+            resource?.file.endsWith(".tf")
+              ? resource.file
+              : (file?.path ?? "main.tf")
+          }
+          preferred={selected}
+          busy={busy || creatingDraft}
+          error={error}
+          onCreate={(request) => void createResource(request)}
+          onClose={() => {
+            if (busy || creatingDraft) return;
+            setCreating(false);
+            setError("");
           }}
         />
       )}

@@ -37,6 +37,7 @@ import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import {
   buildGraph,
   nodeSignature,
+  placeAdded,
   shortType,
   type ResourceNode,
 } from "./graph";
@@ -218,6 +219,8 @@ interface Props {
   resetKey: string;
   marks?: Record<string, DeployMark>;
   focus?: { id: string; n: number };
+  /** Opens the "create resource" dialog (button and right click on the canvas). */
+  onCreate?: () => void;
 }
 function Graph({
   resources,
@@ -228,6 +231,7 @@ function Graph({
   resetKey,
   marks,
   focus,
+  onCreate,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -300,16 +304,24 @@ function Graph({
     setNodes((previous) => {
       const byId = new Map(previous.map((n) => [n.id, n]));
       const keys = new Map<string, string>();
+      const added = new Set<string>();
+      let kept = 0;
       const next = decorate(graph.nodes).map((node) => {
         const key = nodeKey(node);
         keys.set(node.id, key);
         const old = byId.get(node.id);
+        if (!old && !node.parentId) added.add(node.id);
         if (!old || old.parentId !== node.parentId) return node;
+        kept++;
         if (nodeKeys.current.get(node.id) === key) return old;
         return { ...node, position: old.position };
       });
       nodeKeys.current = keys;
-      return next;
+      // A few declarations added to a diagram that kept its places (a
+      // resource created or typed in) go beside it, not on top of it.
+      return kept && added.size && added.size <= 5
+        ? placeAdded(next, added)
+        : next;
     });
     setEdges((previous) =>
       sameEdges(previous, graph.edges) ? previous : graph.edges,
@@ -341,6 +353,11 @@ function Graph({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelect(node.id)}
+        onPaneContextMenu={(event) => {
+          if (!onCreate) return;
+          event.preventDefault();
+          onCreate();
+        }}
         fitView
         fitViewOptions={{ padding: 0.1 }}
         onlyRenderVisibleElements={resources.length > 150}
@@ -365,6 +382,15 @@ function Graph({
           maskColor="rgba(238,243,248,0.65)"
         />
       </ReactFlow>
+      {onCreate && (
+        <button
+          className="canvas-create"
+          title="Crear recurso (también con clic derecho en el lienzo)"
+          onClick={onCreate}
+        >
+          <Plus size={15} /> Crear recurso
+        </button>
+      )}
       <div className="canvas-controls">
         <button
           aria-label="Alejar"

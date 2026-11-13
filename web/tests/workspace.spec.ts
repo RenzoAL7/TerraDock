@@ -7,6 +7,13 @@ import {
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Project, Session } from "../src/lib/types";
+import {
+  buildResource,
+  candidates,
+  referenceExpression,
+  suggestName,
+  templates,
+} from "../src/features/create/templates";
 
 const localSource = `# This comment must survive a visual edit.
 resource "aws_vpc" "main" {
@@ -997,6 +1004,183 @@ test("al recargar con el archivo cambiado por fuera se ofrece comparar", async (
 });
 
 /** 300 resource blocks over several files: VPCs, subnets, groups, instances. */
+test("cada plantilla de la paleta produce un recurso válido en el servidor", async ({
+  request,
+}) => {
+  // The demo project has a VPC, subnets and an AMI variable to point at.
+  let current = await project(request);
+  let content = current.files.find((f) => f.path === "main.tf")!.content;
+  const revision = current.files.find((f) => f.path === "main.tf")!.revision;
+  for (const template of templates) {
+    const references: Record<string, string> = {};
+    for (const attr of template.attributes)
+      if ("reference" in attr) {
+        const target = candidates(current.resources, attr.reference.type)[0];
+        if (target)
+          references[attr.name] = referenceExpression(
+            target,
+            attr.reference.attribute,
+          );
+      }
+    const resource = buildResource(
+      template,
+      suggestName(template, current.resources),
+      references,
+    );
+    const response = await request.post("/api/resource-draft", {
+      headers: headers(),
+      data: {
+        projectId: current.id,
+        path: "main.tf",
+        content,
+        expectedRevision: revision,
+        resource,
+      },
+    });
+    expect(response.ok(), template.type).toBeTruthy();
+    content = ((await response.json()) as { content: string }).content;
+    const preview = await request.post("/api/analyze", {
+      headers: headers(),
+      data: { projectId: current.id, files: { "main.tf": content } },
+    });
+    const analysis = (await preview.json()) as Project;
+    expect(analysis.valid, template.type).toBe(true);
+    expect(
+      analysis.resources.some(
+        (r) => r.id === `${resource.type}.${resource.name}`,
+      ),
+      template.type,
+    ).toBe(true);
+    current = { ...current, resources: analysis.resources };
+  }
+});
+
+const createdSubnet = `
+resource "aws_subnet" "db" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+}
+`;
+
+test("crear un recurso desde el diagrama lo escribe en el archivo, lo selecciona y se puede deshacer y editar", async ({
+  page,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Crear recurso" });
+  await dialog.getByRole("button", { name: /^Subred/ }).click();
+  // aws_subnet.app exists: the suggestion is numbered.
+  await expect(dialog.getByLabel("Nombre", { exact: true })).toHaveValue(
+    "app_2",
+  );
+  await dialog.getByLabel("Nombre", { exact: true }).fill("db");
+  await expect(dialog.getByLabel("VPC (vpc_id)")).toHaveValue(
+    "aws_vpc.main.id",
+  );
+  await expect(dialog.getByLabel("Archivo", { exact: true })).toHaveValue(
+    "main.tf",
+  );
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await expect(dialog).not.toBeVisible();
+  // Diagram → file: appended, the rest of the file byte for byte.
+  await expect
+    .poll(() => readFile(file, "utf8"))
+    .toBe(localSource + createdSubnet);
+  await expect(page.getByTestId("node-aws_subnet.db")).toBeVisible();
+  await expect(page.getByTestId("resource-aws_subnet.db")).toHaveClass(
+    /active/,
+  );
+  await expect(
+    page.getByRole("complementary", { name: "Inspector de propiedades" }),
+  ).toContainText("db");
+  await expect(page.locator(".view-lines")).toContainText(
+    'resource "aws_subnet" "db"',
+  );
+  // Undo removes exactly the block, through the same draft and autosave.
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Se añadió aws_subnet.db al final de main.tf." })
+    .getByRole("button", { name: "Deshacer" })
+    .click();
+  await expect.poll(() => readFile(file, "utf8")).toBe(localSource);
+  await expect(page.getByTestId("node-aws_subnet.db")).toHaveCount(0);
+
+  // Right click on the canvas, into a new file; then edit it visually.
+  await page
+    .getByTestId("architecture-canvas")
+    .locator(".react-flow__pane")
+    .click({ button: "right", position: { x: 12, y: 140 } });
+  await dialog.getByRole("button", { name: /^Subred/ }).click();
+  await dialog.getByLabel("Nombre", { exact: true }).fill("db");
+  await dialog.getByLabel("Archivo", { exact: true }).selectOption({
+    label: "Archivo nuevo…",
+  });
+  await dialog.getByLabel("Nombre del archivo nuevo").fill("main.tf");
+  await expect(dialog).toContainText("Ese archivo ya existe");
+  await dialog.getByLabel("Nombre del archivo nuevo").fill("network.tf");
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await expect(dialog).not.toBeVisible();
+  const created = join(directory, "network.tf");
+  await expect
+    .poll(() => readFile(created, "utf8"))
+    .toBe(createdSubnet.slice(1));
+  await expect(page.getByTestId("node-aws_subnet.db")).toBeVisible();
+  await page.getByLabel("cidr_block").fill("10.0.7.0/24");
+  await expect
+    .poll(() => readFile(created, "utf8"))
+    .toBe(createdSubnet.slice(1).replace("10.0.1.0/24", "10.0.7.0/24"));
+  expect(await readFile(file, "utf8")).toBe(localSource);
+});
+
+test("crear un recurso con un borrador abierto lo añade al borrador, no al disco", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  const edited = localSource.replace('"t3.micro"', '"t3.medium"');
+  await replaceEditorContent(page, edited);
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Crear recurso" });
+  // VPC is the first template; its default name is taken.
+  await dialog.getByLabel("Nombre", { exact: true }).fill("main");
+  await expect(dialog).toContainText("Ya existe aws_vpc.main.");
+  await expect(
+    dialog.getByRole("button", { name: "Crear recurso" }),
+  ).toBeDisabled();
+  await dialog.getByLabel("Nombre", { exact: true }).fill("edge");
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await expect(dialog).not.toBeVisible();
+  const withVpc =
+    edited + '\nresource "aws_vpc" "edge" {\n  cidr_block = "10.0.0.0/16"\n}\n';
+  await expect(page.getByTestId("node-aws_vpc.edge")).toBeVisible();
+  await expect(page.locator(".view-lines")).toContainText(
+    'resource "aws_vpc" "edge"',
+  );
+  await expect(page.locator(".view-lines")).toContainText("t3.medium");
+  // Autosave is off here: nothing reached the disk yet.
+  expect(await readFile(file, "utf8")).toBe(localSource);
+  await page
+    .getByRole("button", { name: "Guardar archivo", exact: true })
+    .click();
+  await expect.poll(() => readFile(file, "utf8")).toBe(withVpc);
+  expect(
+    (await project(request)).resources.some((r) => r.id === "aws_vpc.edge"),
+  ).toBe(true);
+});
+
 function largeProject(count: number): Record<string, string> {
   const files: Record<string, string> = {};
   let body = "";

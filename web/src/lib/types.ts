@@ -118,6 +118,16 @@ export function normalizeProject(project: Project): Project {
   };
 }
 
+/** One argument of a resource created from the diagram: a literal or an expression. */
+export type NewAttribute =
+  | { name: string; value: string | number | boolean }
+  | { name: string; expression: string };
+export interface NewResource {
+  type: string;
+  name: string;
+  attributes: NewAttribute[];
+}
+
 /** Analysis of unsaved drafts layered over the saved project (no disk write). */
 export interface Preview {
   projectId: string;
