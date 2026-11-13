@@ -4,8 +4,10 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,6 +192,50 @@ func writeFile(root, dir, name, content, expectedRevision string) error {
 	beforeReplace("checked")
 	if err = os.Rename(f.Name(), path); err != nil {
 		return problem("io_error", "No se puede reemplazar el archivo.")
+	}
+	return nil
+}
+
+// validNewFileName accepts a plain file name for a new Terraform file: no
+// directories, no hidden files, only portable characters, ending in .tf.
+func validNewFileName(name string) bool {
+	if len(name) < 4 || len(name) > 128 || !strings.HasSuffix(name, ".tf") || name[0] == '.' || name[0] == '-' {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return filepath.Base(name) == name
+}
+
+// createFile writes a file that must not exist yet, inside the confined
+// project directory. O_EXCL makes creation fail instead of replacing a file
+// (or following a symlink) that appeared since the project was read.
+func createFile(root, dir, name, content string) error {
+	safe, err := safePath(root, dir)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(safe, name)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return problem("file_exists", "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.")
+		}
+		return problem("io_error", "No se puede crear el archivo.")
+	}
+	_, err = io.WriteString(f, content)
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return problem("io_error", "No se puede escribir el archivo nuevo.")
 	}
 	return nil
 }
