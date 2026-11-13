@@ -285,3 +285,16 @@ for (const width of [320, 390, 768, 1440]) {
     });
   });
 }
+
+test("the local app link points at the README download option", async ({
+  page,
+}) => {
+  await page.goto("/demo/");
+  // scripts/anchors.test.mjs checks that this anchor exists in README.md.
+  await expect(
+    page.getByRole("link", { name: "Abrir tus archivos con la app local" }),
+  ).toHaveAttribute(
+    "href",
+    "https://github.com/RenzoAL7/TerraDock#opción-2-descargarlo-para-usar-tus-archivos",
+  );
+});
