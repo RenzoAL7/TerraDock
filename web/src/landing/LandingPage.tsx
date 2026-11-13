@@ -83,7 +83,7 @@ function HowItWorks() {
         <p className="eyebrow">CÓMO FUNCIONA</p>
         <h2 id="how-title">Entiende antes de cambiar.</h2>
         <p>
-          El recorrido de la demo local, desde el archivo hasta su arquitectura.
+          El recorrido de la app local, desde el archivo hasta su arquitectura.
         </p>
       </div>
       <ol className="steps">
