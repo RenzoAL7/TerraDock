@@ -94,6 +94,26 @@ func TestStartupOpensExplicitPathAndRejectsEmptyOne(t *testing.T) {
 	}
 }
 
+func TestCheckOpenPathExplainsMissingFolderAndFile(t *testing.T) {
+	root := tempRoot(t)
+	if err := checkOpenPath(root); err != nil {
+		t.Fatalf("an existing folder is accepted: %v", err)
+	}
+	if err := checkOpenPath(""); err != nil {
+		t.Fatalf("no path means no check: %v", err)
+	}
+	if err := checkOpenPath(filepath.Join(root, "missing")); err == nil || !strings.Contains(err.Error(), "la carpeta no existe") {
+		t.Fatalf("a missing path must say so in Spanish, got %v", err)
+	}
+	file := filepath.Join(root, "main.tf")
+	if err := os.WriteFile(file, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkOpenPath(file); err == nil || !strings.Contains(err.Error(), "es un archivo, no una carpeta") {
+		t.Fatalf("a file must be rejected as not a folder, got %v", err)
+	}
+}
+
 func TestParseArgsAcceptsPositionalPath(t *testing.T) {
 	c, err := parseArgs([]string{"./infra", "--port", "8080"})
 	if err != nil {

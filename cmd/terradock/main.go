@@ -97,6 +97,26 @@ func parseArgs(args []string) (config, error) {
 	return c, nil
 }
 
+// checkOpenPath explains in Spanish, before the workspace starts, why a
+// project path from the command line cannot be opened. Without it, the path
+// would first fail as --root with a less specific message.
+func checkOpenPath(path string) error {
+	if path == "" {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("no se puede abrir %s: la carpeta no existe", path)
+	}
+	if err != nil {
+		return fmt.Errorf("no se puede abrir %s: no se pudo leer (%v)", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("no se puede abrir %s: es un archivo, no una carpeta. Indica la carpeta que contiene los archivos .tf", path)
+	}
+	return nil
+}
+
 // openInitial decides what the first snapshot shows. An explicit project path
 // must open; otherwise the root opens when it holds .tf files, and the bundled
 // example stays when it does not. Opening never runs Terraform.
@@ -166,6 +186,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("resolve assets: %w", err)
 	}
+	if err := checkOpenPath(c.openPath); err != nil {
+		return err
+	}
 	manager, err := workspace.New(c.root)
 	if err != nil {
 		return err
@@ -201,11 +224,11 @@ func run() error {
 	served := make(chan error, 1)
 	go func() { served <- httpServer.Serve(listener) }()
 	address := "http://" + listener.Addr().String()
-	log.Printf("TerraDock %s · local project root: %s", server.Version, manager.Root())
+	log.Printf("TerraDock %s · raíz permitida para proyectos locales: %s", server.Version, manager.Root())
 	if initial.Mode == "local" {
-		log.Printf("Opened project %s", initial.Path)
+		log.Printf("Proyecto abierto: %s", initial.Path)
 	}
-	log.Printf("Open %s in your browser. Press Ctrl+C to stop.", address)
+	log.Printf("Abre %s en el navegador. Pulsa Ctrl+C para detenerlo.", address)
 	if c.open {
 		openBrowser(address)
 	}
