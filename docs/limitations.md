@@ -58,14 +58,14 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
 - Integración Git, colaboración multiusuario y sincronización en la nube.
-- Instaladores, firma de código y actualizaciones automáticas. Los binarios autocontenidos para ARM64 y AMD64 en macOS, Linux y Windows ya se construyen (`make package` y el workflow Binarios), pero no están firmados: macOS y Windows muestran un aviso la primera vez. El primer release se publica al crear una etiqueta `v*`; hasta entonces, los enlaces de descarga no tienen archivos y hay que compilar desde el código.
+- Instaladores, firma de código y actualizaciones automáticas. Los binarios autocontenidos para ARM64 y AMD64 en macOS, Linux y Windows ya se construyen (`make package` y el workflow Binarios), pero no están firmados: macOS y Windows muestran un aviso la primera vez. Los archivos aparecen cuando se publica un release (etiqueta `v*`); si los enlaces todavía no descargan nada, aún no hay ninguno publicado y hay que compilar desde el código.
 - Certificación de funcionamiento en Windows y Linux de escritorio y pruebas con múltiples usuarios. La sincronización con 300 recursos sí está medida: el p95 queda por debajo de 1 s en una MacBook ARM con Chromium (ver [rendimiento](performance.md)), pero no en otras máquinas ni sistemas.
 
 ## Ejecución local
 
 Go sirve la aplicación en loopback y la raíz elegida delimita el acceso a proyectos. No está diseñada para exponer el puerto a Internet ni para operar como un servicio multiusuario. El frontend y Monaco forman parte de los assets locales compilados.
 
-En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. La pestaña Floci es la única que ejecuta Terraform: `terraform init` puede descargar providers y necesita red la primera vez; el emulador se contacta solo en endpoints locales.
+En desarrollo se utilizan dos procesos y un proxy de Vite. Las dependencias Go/npm y la instalación inicial de Chromium requieren Internet; analizar y editar la configuración no requiere una cuenta AWS. Abrir, analizar y editar no ejecutan Terraform ni contactan Floci. Solo la pestaña Floci, mientras está visible, consulta el emulador y lee una vez la versión de Terraform. El endpoint debe ser de loopback o `*.floci.io` (debe resolver a tu equipo). Plan, aplicar y destruir ejecutan `terraform init`, que necesita red para descargar providers la primera vez en cada proyecto, y «Iniciar Floci» puede descargar la imagen Docker del emulador si falta. Terraform y la CLI de Floci se ejecutan sin las variables `AWS_*` ni `TF_*` del usuario y con `CHECKPOINT_DISABLE=1`.
 
 ## Estado del roadmap
 

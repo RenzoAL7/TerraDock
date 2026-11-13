@@ -1021,15 +1021,17 @@ export default function App() {
               </li>
             </ol>
             <p>
-              Todo se sirve desde tu equipo. El análisis y la edición son
-              locales: abrir una carpeta no ejecuta Terraform ni contacta
-              proveedores cloud. Los módulos se muestran sin expandir y{" "}
-              <code>count</code>/<code>for_each</code> no se evalúan.
+              Todo se sirve desde tu equipo. Abrir una carpeta, analizar y
+              editar no ejecutan Terraform ni contactan proveedores cloud ni
+              Floci. Los módulos se muestran sin expandir y <code>count</code>/
+              <code>for_each</code> no se evalúan.
             </p>
             <p>
-              Solo la pestaña Floci ejecuta Terraform, siempre contra el
-              emulador local. Para eso, <code>terraform init</code> puede
-              descargar providers y necesita red la primera vez.
+              Solo la pestaña Floci, mientras está abierta, consulta el emulador
+              local y la versión de Terraform. Plan, aplicar y destruir ejecutan
+              Terraform contra el emulador: <code>terraform init</code> descarga
+              providers la primera vez en cada proyecto, e Iniciar Floci puede
+              descargar su imagen Docker si falta.
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus

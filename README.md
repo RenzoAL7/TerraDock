@@ -104,8 +104,11 @@ terradock
   - Los endpoints de Floci y las credenciales de prueba solo existen en esa copia.
   - Tus variables `AWS_*` reales se descartan.
 - Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo se guardan en memoria.
-- Solo se aceptan endpoints locales (`localhost`, `127.0.0.1` o `*.floci.io`). Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
-- **Red:** ver y editar no usa la red, pero esta pestaña sí ejecuta Terraform. `terraform init` puede descargar los providers del registro y necesita red la primera vez; después se reutiliza la caché de plugins de TerraDock.
+- Solo se aceptan endpoints de loopback (`localhost`, `127.0.0.1`…) o `*.floci.io`, que debe resolver a tu equipo. Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
+- **Cuándo se usa la red:** abrir una carpeta, ver el diagrama y editar no ejecutan Terraform ni contactan Floci.
+  - Solo mientras la pestaña Floci está visible, TerraDock consulta cada pocos segundos si el emulador responde en su endpoint local. La primera vez también ejecuta `terraform version`, sin tus variables `AWS_*` ni `TF_*` y con `CHECKPOINT_DISABLE=1`, así que no consulta actualizaciones a HashiCorp.
+  - Plan, aplicar y destruir ejecutan `terraform init`, que descarga los providers del registro la primera vez en cada proyecto. Después se reutiliza la caché de plugins de TerraDock.
+  - «Iniciar Floci» ejecuta `floci start`, que puede descargar la imagen Docker del emulador si falta.
 
 ## Para desarrolladores
 

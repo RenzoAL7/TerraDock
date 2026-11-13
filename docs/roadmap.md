@@ -212,7 +212,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [ ] Templates con variables de entrada, supuestos, instrucciones y versiones de proveedores compatibles.
 - [ ] Previsualización de archivos y creación en un directorio nuevo; conflictos de nombres gestionados.
 - [ ] Verificación sintáctica y validación Terraform en el proceso de publicación de templates; indicar requisitos pendientes y no afirmar despliegue probado sin evidencia.
-- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente, demo y una sección de descarga que apunta al último release de GitHub. Falta publicar el primer release (etiqueta `v*`) para que esos enlaces tengan archivos.
+- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente, demo y una sección de descarga que apunta al último release de GitHub. Esos enlaces tienen archivos a partir del primer release (etiqueta `v*`).
 - [x] Demo con archivos de ejemplo en memoria, reinicio y las mismas restricciones de edición.
 - [x] Validar cómo compartir el núcleo de análisis y edición en la demo, por ejemplo mediante una prueba de WebAssembly. No crear un segundo parser con comportamiento diferente.
 - [x] Mantener la demo independiente de las carpetas del visitante y del servicio local.
@@ -225,7 +225,7 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 
 **Entrega y calidad**
 
-- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad. Implementado: `make package` y el workflow Binarios generan los 6 archivos (macOS, Linux y Windows; ARM64 y AMD64) con `checksums.txt` al publicar una etiqueta `v*`. Falta publicar el primer release y verificarlo en cada sistema.
+- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad. Implementado: `make package` y el workflow Binarios generan los 6 archivos (macOS, Linux y Windows; ARM64 y AMD64) con `checksums.txt` al publicar una etiqueta `v*`. Queda verificar el primer release publicado en cada sistema.
 - [ ] Instalación, actualización, reversión y desinstalación documentadas.
 - [ ] Arranque con una orden y apertura automática opcional del navegador; opción de abrir una ruta directamente. Hecho: arranque con una orden (`terradock`) y apertura del navegador desactivable con `--open=false`. Falta abrir un proyecto directamente al iniciar.
 - [ ] Funcionamiento básico sin Terraform, credenciales AWS ni conexión a Internet después de instalar.
@@ -281,7 +281,7 @@ La evaluación completa de IAM, estimación de costos, otros proveedores, colabo
 2. Cerrar la fase 3: comparación de versiones en conflicto, recuperación de borradores tras cerrar o reiniciar, y archivos creados, renombrados o eliminados externamente.
 3. Completar V8: detectar antes de aplicar los tipos y servicios que Floci no emula (por ejemplo `t3.large`) y comparar atributos con el estado desplegado.
 4. Fase 4: variables, locals, outputs y módulos locales visibles en el diagrama.
-5. Fase 9: publicar el primer release (etiqueta `v*`) de los binarios ARM64 y AMD64 para macOS, Linux y Windows, ya implementados con frontend incrustado y apertura del navegador (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64). Después, firma de código, actualización y desinstalación documentadas.
+5. Fase 9: publicar un release (etiqueta `v*`) de los binarios ARM64 y AMD64 para macOS, Linux y Windows, ya implementados con frontend incrustado y apertura del navegador (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64). Después, firma de código, actualización y desinstalación documentadas.
 
 No se asignan fechas antes de validar el núcleo técnico. Las estimaciones se harán con evidencia de esa prueba y la disponibilidad real de trabajo.
 
