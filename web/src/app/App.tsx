@@ -913,7 +913,9 @@ export default function App() {
                 error={floci.error}
                 running={floci.running}
                 hasUnsaved={hasUnsaved}
-                resourceCount={project.resources.length}
+                resourceCount={
+                  project.resources.filter((r) => r.block === "resource").length
+                }
                 onRun={(action, variables) => void floci.run(action, variables)}
                 onCancel={() => void floci.cancel()}
               />

@@ -576,6 +576,34 @@ a {
   background: #eaf2f8;
   color: #6a93b4;
 }
+.variable .resource-icon,
+.local .resource-icon {
+  background: #f1f3f6;
+  color: #6b7f94;
+}
+.output .resource-icon {
+  background: #eef6f4;
+  color: #5f8f86;
+}
+.provider .resource-icon {
+  background: #f6f0f6;
+  color: #94708f;
+}
+.repeat-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 90px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 9px var(--mono);
+  color: #4d7495;
+  background: #eaf2f8;
+  border: 1px solid #d5e4ef;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
 .node-kind {
   font-size: 9px;
   letter-spacing: 0.2px;
@@ -955,6 +983,19 @@ a {
   line-height: 1.8;
   color: #8b99a8;
   margin: 0 0 13px;
+}
+.read-only-reason {
+  font-size: 9px;
+  line-height: 1.6;
+  color: #7d8fa2;
+  margin: 5px 0 2px;
+}
+.readonly-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+  color: #8b9aab;
 }
 .reference-item {
   width: 100%;

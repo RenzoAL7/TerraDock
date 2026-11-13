@@ -13,7 +13,7 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 | Área | Alcance |
 | --- | --- |
 | Archivos | Terraform HCL en archivos `.tf` del módulo raíz seleccionado |
-| Recursos | Declaraciones de recursos y referencias reconocibles; presentación especializada para el ejemplo AWS y representación genérica cuando corresponde |
+| Recursos | Recursos, fuentes de datos, módulos, variables, locals (un nodo por clave), outputs y proveedores (con alias), con sus referencias; presentación especializada para el ejemplo AWS y representación genérica cuando corresponde |
 | Expresiones | Se conserva la expresión original; no se ejecutan funciones de Terraform ni consultas de proveedores |
 | Editor | Edición de texto y guardado mediante el servicio local |
 | Inspector | Edición limitada a valores literales compatibles; expresiones calculadas en lectura |
@@ -35,7 +35,10 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 
 - No se expande el contenido de módulos locales o remotos; seleccionar una subcarpeta implica analizar ese módulo por separado.
 - No se evalúa la precedencia de `.tfvars`, variables de entorno u opciones CLI.
-- `count`, `for_each`, funciones y bloques dinámicos pueden conservarse como código; la demo no garantiza resolver su efecto.
+- `count`, `for_each`, funciones y bloques dinámicos pueden conservarse como código; la demo no garantiza resolver su efecto. Un bloque con `count` o `for_each` lleva una marca en su nodo (`× 3`, `× var.n` o `for_each`) y se dibuja una sola vez.
+- Las variables, los locals, los outputs y los proveedores son nodos de solo lectura: se muestran su valor por defecto o su expresión, pero no se evalúan ni se aplican `.tfvars`. Una referencia a una variable o un local no declarados aparece como aviso.
+- La relación con un proveedor solo se dibuja cuando un recurso o un módulo lo nombra (`provider = aws.west`, `providers = { … }`); la asociación implícita por el prefijo del tipo no se dibuja.
+- El inspector explica, en cada propiedad que no edita, el motivo: una referencia o variable, una función, una lista u objeto, `null`, un número que el navegador no representa con precisión, una propiedad fuera de la lista editable o un bloque que no es un recurso.
 - Los archivos `.tf.json` aparecen en la lista de archivos, en solo lectura y con un aviso, pero su contenido no se interpreta: sus recursos no llegan al diagrama. Tampoco se copian a la ejecución de Floci, que sigue usando solo los `.tf`.
 - No hay validación semántica con esquemas de proveedores. Un archivo sintácticamente correcto todavía puede resultar inválido para Terraform o AWS.
 - Los nombres, las etiquetas y las relaciones dibujadas no demuestran conectividad, seguridad o disponibilidad de una infraestructura real.

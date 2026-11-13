@@ -292,7 +292,10 @@ test("cambia entre los ejemplos y muestra su propio conjunto de recursos", async
   await page.getByRole("button", { name: "Ejemplos", exact: true }).click();
   await page.getByRole("button", { name: /Red mínima AWS/ }).click();
   await expect(page.getByTestId("resource-aws_instance.web")).toBeVisible();
-  expect((await project(request)).resources).toHaveLength(3);
+  // Three resources plus the ami_id variable they reference.
+  const declared = (await project(request)).resources;
+  expect(declared.filter((r) => r.block === "resource")).toHaveLength(3);
+  expect(declared.map((r) => r.id)).toContain("var.ami_id");
   await expect(page.getByTestId("resource-aws_instance.app_a")).toHaveCount(0);
   await page.getByRole("button", { name: "Ejemplos", exact: true }).click();
   await page.getByRole("button", { name: /Aplicación web AWS/ }).click();

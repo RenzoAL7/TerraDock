@@ -32,6 +32,8 @@ flowchart LR
 
 El análisis considera los `.tf` del directorio seleccionado como un módulo raíz. Cada recurso conserva su dirección, tipo, nombre y ubicación de origen. Las relaciones se extraen de referencias presentes en las expresiones; sus etiquetas y direcciones deben poder justificarse desde el código.
 
+Además de los recursos, el modelo incluye fuentes de datos, módulos, variables, locals (una declaración por clave), outputs y proveedores. El campo `block` de cada declaración indica su clase, y su `id` usa la sintaxis con la que Terraform la referencia (`var.region`, `local.name`, `output.ip`, `provider.aws.west`), de modo que una referencia en el código resuelve directamente a su nodo. Cada propiedad que el inspector no edita lleva `readOnlyReason`, un motivo en español.
+
 El parser interpreta sintaxis HCL. No sustituye el motor de evaluación de Terraform ni los esquemas de los proveedores. Los bloques con `count` o `for_each` son declaraciones; no se expanden a un número inventado de instancias. Los valores dependientes de variables, funciones o proveedores se mantienen como expresiones.
 
 La edición desde el inspector se restringe a los literales reconocidos. Una operación debe apuntar al rango de la expresión original y verificar la revisión antes de escribir. El código no editado visualmente conserva su contenido. El [documento de limitaciones](limitations.md) delimita las garantías de esta demo y lo que falta para la edición fiable prevista en el roadmap.

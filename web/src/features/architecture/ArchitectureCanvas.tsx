@@ -18,13 +18,18 @@ import {
   Database,
   Globe2,
   Layers3,
+  LogOut,
   Maximize,
   Minus,
   Network,
+  Plug,
   Plus,
+  Repeat2,
   Route,
   Server,
   ShieldCheck,
+  Sigma,
+  SlidersHorizontal,
   Workflow,
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
@@ -86,16 +91,57 @@ export function ResourceIcon({
             database: Database,
             storage: Box,
             loadbalancer: Workflow,
+            variable: SlidersHorizontal,
+            local: Sigma,
+            output: LogOut,
+            provider: Plug,
             other: Layers3,
           }[resource.category] || Layers3;
   return <Icon size={size} strokeWidth={1.65} />;
 }
 
+/** The one value a card shows under its name, by kind of declaration. */
+const detailProperties: Partial<Record<Resource["block"], string[]>> = {
+  variable: ["default", "type"],
+  local: ["value"],
+  output: ["value"],
+  provider: ["region"],
+};
+
+/**
+ * count / for_each blocks are declarations, not expanded instances: say so on
+ * the card instead of drawing a guessed number of copies.
+ */
+function RepeatMark({ resource }: { resource: Resource }) {
+  const p = resource.properties.find(
+    (p) => p.name === "count" || p.name === "for_each",
+  );
+  if (!p) return null;
+  const text =
+    p.name === "count" ? `× ${String(p.value ?? p.expression)}` : `for_each`;
+  return (
+    <span
+      className="repeat-mark"
+      data-testid="repeat-mark"
+      title={`${p.name} = ${p.expression}. Se muestra el bloque declarado, sin expandir sus instancias.`}
+    >
+      <Repeat2 size={11} />
+      {text}
+    </span>
+  );
+}
+
 function ResourceCard({ data }: NodeProps<ResourceNode>) {
   const r = data.resource;
-  const p = r.properties.find((p) =>
-    ["instance_type", "engine", "bucket_prefix", "internal"].includes(p.name),
-  );
+  const names = detailProperties[r.block] ?? [
+    "instance_type",
+    "engine",
+    "bucket_prefix",
+    "internal",
+  ];
+  const p = names
+    .map((name) => r.properties.find((p) => p.name === name))
+    .find(Boolean);
   return (
     <div
       className={`resource-node ${r.category} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
@@ -107,6 +153,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
           <ResourceIcon resource={r} />
         </span>
         <span className="node-kind">{shortType(r.type)}</span>
+        <RepeatMark resource={r} />
         <NodeMark mark={data.mark as DeployMark | undefined} />
         {!data.mark && <span className="node-dot" />}
       </div>
@@ -135,6 +182,7 @@ function ScopeCard({ data }: NodeProps<ResourceNode>) {
         </span>
         <strong>{r.label || r.name}</strong>
         <span className="scope-type">{shortType(r.type)}</span>
+        <RepeatMark resource={r} />
         <NodeMark mark={data.mark as DeployMark | undefined} />
       </div>
       <div className="scope-meta">

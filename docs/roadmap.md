@@ -21,9 +21,9 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 | Área | Estado |
 | --- | --- |
 | Núcleo técnico (fase 1) | Completo: parser HCL, modelo vinculado a la fuente, edición de literales preservando bytes y detección de cambios externos. |
-| IDE local (fase 2) | Mayormente completo. Faltan proyectos recientes y la gestión de archivos (crear, renombrar, eliminar). |
-| Edición bidireccional (fase 3) | Núcleo completo y **en tiempo real**: código → diagrama mientras se escribe, inspector → código al instante, archivo externo → diagrama con eventos nativos y autoguardado de HCL válido con control de revisión. Falta el historial, la comparación de conflictos y la recuperación tras una interrupción. |
-| Proyectos habituales (fase 4) | Pendiente. Solo se leen los `tfvars` del proyecto para Floci. |
+| IDE local (fase 2) | Mayormente completo. Abre al arrancar la carpeta indicada o la raíz con `.tf`, y explica un puerto ocupado. Faltan proyectos recientes y la gestión de archivos desde la interfaz (crear, renombrar, eliminar). |
+| Edición bidireccional (fase 3) | Núcleo completo y **en tiempo real**: código → diagrama mientras se escribe, inspector → código al instante, archivo externo → diagrama con eventos nativos y autoguardado de HCL válido con control de revisión. Los borradores sobreviven a cerrar o recargar la pestaña (IndexedDB, 7 días) y un conflicto se compara y resuelve (conservar el mío con fusión de tres vías, usar el del disco o editar el resultado). Falta el historial. |
+| Proyectos habituales (fase 4) | En curso: variables, locals (uno por clave), outputs y proveedores con alias son nodos con aristas; `count`/`for_each` se marcan sin expandir; el inspector explica por qué una propiedad no es editable; `.tf.json` se lista con aviso. Solo se leen los `tfvars` del proyecto para Floci. |
 | Planes (fase 6) | Parcial por otra vía: el plan generado contra Floci se muestra sobre el diagrama. Todavía no se importa un JSON arbitrario. |
 | Demo y portada (fase 8) | Publicadas en el dominio, con el núcleo compartido vía WebAssembly. |
 | Floci (V8) | En curso: iniciar, plan, aplicar el plan revisado, leer estado y destruir; marcas por nodo; variables. Verificado contra Floci 1.5.33. |
@@ -72,8 +72,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 **Funcionalidades**
 
 - [x] Un programa sirve frontend y API en el mismo puerto local. Los binarios de release llevan el frontend incrustado (`web/embed.go`) y abren el navegador al arrancar (`--open`).
-- [x] Puerto configurable con `--port` (las pruebas de navegador usan el 7332) e instrucciones de inicio y cierre en el README.
-- [ ] Mensaje claro si el puerto está ocupado. Hoy se muestra el error del sistema operativo.
+- [x] Puerto configurable con `--port` (las pruebas de navegador usan el 7332), mensaje claro si está ocupado e instrucciones de inicio y cierre en el README. También abre al arrancar la carpeta indicada (`terradock ./infra`) o la raíz si tiene `.tf`.
 - [ ] Botón Abrir carpeta, navegación de directorios, ruta manual y proyectos recientes.
 - [ ] Detectar ausencia de archivos Terraform en la carpeta, permisos insuficientes y carpetas con varios entornos; permitir elegir la raíz adecuada.
 - [ ] Explorador con archivos y carpetas, búsqueda de archivos y apertura en pestañas.
@@ -81,7 +80,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Monaco con edición, resaltado HCL, búsqueda, deshacer/rehacer y guardado.
 - [x] Vistas Arquitectura, Código y Dividida.
 - [x] Navegación de nodo a declaración y de declaración a nodo. En la vista dividida, el cursor selecciona el recurso y el nodo resalta su bloque.
-- [ ] Inspector con valor o expresión, ubicación de origen y motivo cuando una propiedad no es editable visualmente.
+- [x] Inspector con valor o expresión, ubicación de origen y motivo cuando una propiedad no es editable visualmente.
 - [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y colocación en rejilla fija (sin layout automático).
 - [x] Estados separados: borrador sin guardar, guardando, sincronizado, analizando, gráfico desactualizado y validación.
 - [x] Panel de problemas con archivo, línea y explicación.
@@ -97,16 +96,16 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Lista explícita de propiedades editables y tipos aceptados; empezar con literales escalares.
 - [x] Guardado de código libre conservando los bloques que TerraDock no interpreta.
 - [x] Comparación de versión/contenido antes de aplicar modificaciones.
-- [ ] Probar expresamente un cambio externo que ocurre durante el guardado; la comparación previa y el reemplazo atómico no bastan por sí solos. Definir cómo detectar el conflicto y conservar las versiones recuperables antes de prometer ausencia de pérdida de cambios.
+- [ ] Probar expresamente un cambio externo que ocurre durante el guardado; la comparación previa y el reemplazo atómico no bastan por sí solos. Definir cómo detectar el conflicto y conservar las versiones recuperables antes de prometer ausencia de pérdida de cambios. Probado (`internal/workspace`): una escritura antes de la última comprobación se rechaza como conflicto; una que cae entre la comprobación y el reemplazo se pierde. Falta cerrar esa ventana o conservar la versión pisada.
 - [x] Manejo de cambios externos cuando el editor tiene borradores pendientes.
 - [x] Coordinación entre un borrador del editor y una edición del inspector sobre el mismo archivo. El inspector edita el mismo borrador y reintenta si el código cambió durante la petición.
-- [ ] Conflictos visibles, comparación y opciones de conservar, recargar o resolver.
+- [x] Conflictos visibles, comparación y opciones de conservar, recargar o resolver.
 - [x] Escritura mediante reemplazo seguro, manejo de fallos y confirmación de éxito antes de mostrar Guardado.
 - [ ] Historial acotado o recuperación de cambios propios, sin sobrescribir versiones externas nuevas al restaurar.
-- [ ] Advertencia al cambiar de proyecto o cerrar con trabajo pendiente; recuperación de borradores ante interrupciones.
-- [ ] Manejo de renombrado, eliminación y creación externa de archivos.
+- [x] Advertencia al cambiar de proyecto o cerrar con trabajo pendiente; recuperación de borradores ante interrupciones.
+- [x] Manejo de renombrado, eliminación y creación externa de archivos. El proyecto se actualiza; un borrador de un archivo desaparecido queda huérfano, se puede descargar y no recrea el archivo.
 - [x] Eventos con revisiones para evitar bucles y estados antiguos tras reconectar.
-- [ ] Coordinación entre dos pestañas de navegador abiertas sobre el mismo proyecto.
+- [ ] Coordinación entre dos pestañas de navegador abiertas sobre el mismo proyecto. Hecho: aviso cuando otra pestaña tiene un borrador del mismo archivo. Falta coordinar la edición en sí.
 - [x] Último gráfico válido claramente marcado como desactualizado cuando el código es inválido.
 
 - [x] **Sincronización en tiempo real (prioridad):** código → diagrama mientras se escribe (`POST /api/analyze`, sin escribir en disco), inspector → código al instante (`POST /api/edit-draft`), archivo externo → diagrama con fsnotify y sondeo de respaldo (menos de 300 ms medidos), y autoguardado que espera a que el HCL sea válido.
@@ -119,16 +118,16 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 
 **Funcionalidades**
 
-- [ ] Mostrar variables, locals, outputs y data sources, con navegación a su declaración.
+- [x] Mostrar variables, locals, outputs y data sources, con navegación a su declaración.
 - [ ] Conservar expresiones, funciones, interpolaciones y referencias no resueltas.
 - [ ] Distinguir valor literal, valor predeterminado, valor evaluado en un contexto conocido y valor desconocido.
 - [ ] Si se interpretan `.tfvars`, definir el contexto y precedencia aplicados; no asumir que cualquier archivo `.tfvars` se carga automáticamente. Por ahora solo el ejecutor de Floci copia `terraform.tfvars` y `*.auto.tfvars`, que Terraform carga por defecto, y no los evalúa en el diagrama.
 - [ ] Navegar llamadas a módulos locales, conservando sus límites y direcciones.
 - [ ] Identificar módulos remotos no disponibles. Lectura opcional de fuentes instaladas, sin editar cachés de terceros ni descargarlas al abrir un proyecto.
-- [ ] Representar bloques con `count` y `for_each` sin inventar instancias; usar el plan para mostrar instancias planificadas.
-- [ ] Identificar configuración y alias de proveedores.
+- [ ] Representar bloques con `count` y `for_each` sin inventar instancias; usar el plan para mostrar instancias planificadas. Hecho: marca visible en el nodo, sin expandir. Falta usar el plan.
+- [x] Identificar configuración y alias de proveedores.
 - [ ] Indicar soporte parcial de bloques dinámicos y construcciones no evaluadas.
-- [ ] Documentar compatibilidad de `.tf.json`; propuesta inicial: detectarlo e indicar que no se interpreta, sin ocultar que el proyecto es parcial.
+- [x] Documentar compatibilidad de `.tf.json`; propuesta inicial: detectarlo e indicar que no se interpreta, sin ocultar que el proyecto es parcial.
 - [ ] Mantener una matriz con ejemplos para lectura, visualización, evaluación y edición.
 
 **Terminado cuando:** un proyecto con varios archivos, variables y módulos locales se puede recorrer; lo no resuelto permanece visible; las direcciones no colisionan entre módulos.

@@ -16,6 +16,9 @@ type declaration struct {
 	resource Resource
 	block    *hclsyntax.Block
 	source   []byte
+	// attr is set for a local value: the declaration is one key of a locals
+	// block, and only that attribute belongs to it.
+	attr *hclsyntax.Attribute
 }
 
 // Parse analyzes the supplied files as one root module. Callers must select the
@@ -62,64 +65,16 @@ func Parse(files map[string]string) Analysis {
 			continue
 		}
 		for _, block := range body.Blocks {
-			id, resourceType, resourceName, supported := blockIdentity(block)
-			if !supported {
-				if block.Type == "resource" || block.Type == "data" || block.Type == "module" {
+			for _, entry := range declarationsOf(block, source, name, &a) {
+				id := entry.resource.ID
+				if previous, exists := byID[id]; exists {
 					a.Valid = false
-					a.Diagnostics = append(a.Diagnostics, Diagnostic{"error", "La declaración " + block.Type + " no tiene las etiquetas requeridas.", name, block.TypeRange.Start.Line})
-				}
-				continue
-			}
-			if previous, exists := byID[id]; exists {
-				a.Valid = false
-				a.Diagnostics = append(a.Diagnostics, Diagnostic{"error", fmt.Sprintf("Declaración duplicada %s; también existe en %s:%d.", id, decls[previous].resource.File, decls[previous].resource.Line), name, block.TypeRange.Start.Line})
-				continue
-			}
-			resource := Resource{
-				ID: id, Type: resourceType, Name: resourceName, File: name,
-				Line: block.TypeRange.Start.Line, Category: category(resourceType),
-				Label: resourceLabel(block, resourceName), Properties: []Property{}, DependsOn: []string{},
-			}
-			for _, attr := range orderedAttributes(block.Body) {
-				value, literal := literalValue(attr.Expr)
-				kind := "expression"
-				if literal {
-					kind = "literal"
-				}
-				resource.Properties = append(resource.Properties, Property{
-					Name: attr.Name, Expression: sourceRange(source, attr.Expr.Range()),
-					Value: value, Kind: kind,
-					Editable: literal && block.Type == "resource" && editableProperty(attr.Name),
-					Line:     attr.NameRange.Start.Line,
-				})
-				if attr.Name == "count" || attr.Name == "for_each" {
-					a.Diagnostics = append(a.Diagnostics, Diagnostic{"warning", fmt.Sprintf("%s usa %s: se muestra un bloque declarado, sin expandir sus instancias.", id, attr.Name), name, attr.NameRange.Start.Line})
-				}
-			}
-			// Nested blocks remain inspectable as original HCL and read-only.
-			for _, nested := range block.Body.Blocks {
-				resource.Properties = append(resource.Properties, Property{
-					Name: nested.Type, Expression: sourceRange(source, nested.Range()), Kind: "expression",
-					Line: nested.TypeRange.Start.Line,
-				})
-			}
-			if block.Type == "module" {
-				a.Diagnostics = append(a.Diagnostics, Diagnostic{"warning", fmt.Sprintf("El módulo %s se muestra sin expandir su código interno.", resourceName), name, resource.Line})
-			}
-			for _, parentAttr := range []string{"subnet_id", "vpc_id"} {
-				attr := block.Body.Attributes[parentAttr]
-				if attr == nil {
+					a.Diagnostics = append(a.Diagnostics, Diagnostic{"error", fmt.Sprintf("Declaración duplicada %s; también existe en %s:%d.", id, decls[previous].resource.File, decls[previous].resource.Line), name, entry.resource.Line})
 					continue
 				}
-				if traversal, direct := attr.Expr.(*hclsyntax.ScopeTraversalExpr); direct {
-					if parentID := referenceID(traversal.Traversal); parentID != "" {
-						resource.ParentID = parentID
-						break
-					}
-				}
+				byID[id] = len(decls)
+				decls = append(decls, entry)
 			}
-			byID[id] = len(decls)
-			decls = append(decls, declaration{resource, block, source})
 		}
 	}
 	edgeKeys := map[string]bool{}
@@ -139,13 +94,20 @@ func Parse(files map[string]string) Analysis {
 		}
 		seenDepends := map[string]bool{}
 		seenUnresolved := map[string]bool{}
-		walkAttributes(d.block.Body, func(attr *hclsyntax.Attribute) {
+		visit := func(attr *hclsyntax.Attribute) {
 			kind := "reference"
 			if attr.Name == "depends_on" {
 				kind = "dependency"
 			}
+			// provider = aws.west (resources, data) and providers = { aws = aws.west }
+			// (modules) name provider configurations, not resources.
+			providerRef := (attr.Name == "provider" && (d.resource.Block == "resource" || d.resource.Block == "data")) ||
+				(attr.Name == "providers" && d.resource.Block == "module")
 			for _, traversal := range attr.Expr.Variables() {
 				ref := referenceID(traversal)
+				if providerRef {
+					ref = providerReference(traversal)
+				}
 				if ref == "" || ref == d.resource.ID {
 					continue
 				}
@@ -154,6 +116,10 @@ func Parse(files map[string]string) Analysis {
 					seenDepends[ref] = true
 				}
 				if _, exists := byID[ref]; !exists {
+					// The default configuration of a provider may be implicit.
+					if providerRef && strings.Count(ref, ".") < 2 {
+						continue
+					}
 					if !seenUnresolved[ref] {
 						a.Diagnostics = append(a.Diagnostics, Diagnostic{"warning", fmt.Sprintf("%s referencia %s, que no se encontró en este módulo.", d.resource.ID, ref), d.resource.File, attr.NameRange.Start.Line})
 						seenUnresolved[ref] = true
@@ -167,7 +133,12 @@ func Parse(files map[string]string) Analysis {
 				edgeKeys[key] = true
 				a.Edges = append(a.Edges, Edge{key, ref, d.resource.ID, kind, attr.Name})
 			}
-		})
+		}
+		if d.attr != nil {
+			visit(d.attr)
+		} else {
+			walkAttributes(d.block.Body, visit)
+		}
 		sort.Strings(d.resource.DependsOn)
 		a.Resources = append(a.Resources, d.resource)
 	}
@@ -175,17 +146,165 @@ func Parse(files map[string]string) Analysis {
 	return a
 }
 
-func blockIdentity(block *hclsyntax.Block) (id, resourceType, name string, ok bool) {
-	switch {
-	case block.Type == "resource" && len(block.Labels) == 2:
-		return block.Labels[0] + "." + block.Labels[1], block.Labels[0], block.Labels[1], true
-	case block.Type == "data" && len(block.Labels) == 2:
-		return "data." + block.Labels[0] + "." + block.Labels[1], block.Labels[0], block.Labels[1], true
-	case block.Type == "module" && len(block.Labels) == 1:
-		return "module." + block.Labels[0], "module", block.Labels[0], true
+// blockIdentity names a top-level block as the diagram shows it. IDs use the
+// same syntax Terraform uses to reference them (var.x, output.x…), so edges
+// resolve without special cases. An empty id with no problem means the block
+// is not drawn (terraform, moved, import…).
+func blockIdentity(block *hclsyntax.Block) (id, kind, resourceType, name, problem string) {
+	labels := block.Labels
+	missing := "La declaración " + block.Type + " no tiene las etiquetas requeridas."
+	switch block.Type {
+	case "resource", "data":
+		if len(labels) != 2 {
+			return "", "", "", "", missing
+		}
+		id = labels[0] + "." + labels[1]
+		if block.Type == "data" {
+			id = "data." + id
+		}
+		return id, block.Type, labels[0], labels[1], ""
+	case "module", "variable", "output", "provider":
+		if len(labels) != 1 {
+			return "", "", "", "", missing
+		}
 	default:
-		return "", "", "", false
+		return "", "", "", "", ""
 	}
+	switch block.Type {
+	case "module":
+		return "module." + labels[0], "module", "module", labels[0], ""
+	case "variable":
+		return "var." + labels[0], "variable", "variable", labels[0], ""
+	case "output":
+		return "output." + labels[0], "output", "output", labels[0], ""
+	}
+	// A provider block configures the default provider, or an alias of it.
+	alias := block.Body.Attributes["alias"]
+	if alias == nil {
+		return "provider." + labels[0], "provider", "provider", labels[0], ""
+	}
+	value, literal := literalValue(alias.Expr)
+	if text, ok := value.(string); literal && ok && text != "" {
+		return "provider." + labels[0] + "." + text, "provider", "provider", labels[0] + "." + text, ""
+	}
+	return "", "", "", "", "El alias del proveedor " + labels[0] + " debe ser un texto literal."
+}
+
+// declarationsOf turns one top-level block into diagram declarations: one per
+// block, or one per key for locals. Problems are added to the analysis.
+func declarationsOf(block *hclsyntax.Block, source []byte, file string, a *Analysis) []declaration {
+	line := block.TypeRange.Start.Line
+	if block.Type == "locals" {
+		if len(block.Labels) != 0 {
+			a.Valid = false
+			a.Diagnostics = append(a.Diagnostics, Diagnostic{"error", "El bloque locals no lleva etiquetas.", file, line})
+			return nil
+		}
+		out := []declaration{}
+		for _, attr := range orderedAttributes(block.Body) {
+			out = append(out, declaration{
+				resource: Resource{
+					ID: "local." + attr.Name, Block: "local", Type: "local", Name: attr.Name, File: file,
+					Line: attr.NameRange.Start.Line, Category: "local", Label: attr.Name,
+					Properties: []Property{propertyOf(source, "local", "value", attr)}, DependsOn: []string{},
+				},
+				block: block, source: source, attr: attr,
+			})
+		}
+		return out
+	}
+	id, kind, resourceType, resourceName, problem := blockIdentity(block)
+	if problem != "" {
+		a.Valid = false
+		a.Diagnostics = append(a.Diagnostics, Diagnostic{"error", problem, file, line})
+		return nil
+	}
+	if id == "" {
+		return nil
+	}
+	resource := Resource{
+		ID: id, Block: kind, Type: resourceType, Name: resourceName, File: file,
+		Line: line, Category: blockCategory(kind, resourceType),
+		Label: resourceLabel(block, resourceName), Properties: []Property{}, DependsOn: []string{},
+	}
+	for _, attr := range orderedAttributes(block.Body) {
+		resource.Properties = append(resource.Properties, propertyOf(source, kind, attr.Name, attr))
+		if attr.Name == "count" || attr.Name == "for_each" {
+			a.Diagnostics = append(a.Diagnostics, Diagnostic{"warning", fmt.Sprintf("%s usa %s: se muestra un bloque declarado, sin expandir sus instancias.", id, attr.Name), file, attr.NameRange.Start.Line})
+		}
+	}
+	// Nested blocks remain inspectable as original HCL and read-only.
+	for _, nested := range block.Body.Blocks {
+		resource.Properties = append(resource.Properties, Property{
+			Name: nested.Type, Expression: sourceRange(source, nested.Range()), Kind: "expression",
+			Line: nested.TypeRange.Start.Line, ReadOnlyReason: "Es un bloque anidado: se edita en el código.",
+		})
+	}
+	if kind == "module" {
+		a.Diagnostics = append(a.Diagnostics, Diagnostic{"warning", fmt.Sprintf("El módulo %s se muestra sin expandir su código interno.", resourceName), file, line})
+	}
+	for _, parentAttr := range []string{"subnet_id", "vpc_id"} {
+		attr := block.Body.Attributes[parentAttr]
+		if attr == nil {
+			continue
+		}
+		if traversal, direct := attr.Expr.(*hclsyntax.ScopeTraversalExpr); direct {
+			// A variable or local value is not a layout container; keep looking.
+			if parentID := referenceID(traversal.Traversal); parentID != "" && !strings.HasPrefix(parentID, "var.") && !strings.HasPrefix(parentID, "local.") {
+				resource.ParentID = parentID
+				break
+			}
+		}
+	}
+	return []declaration{{resource: resource, block: block, source: source}}
+}
+
+// propertyOf describes one attribute; only allowlisted literals of managed
+// resources are editable, and every other property says why it is not.
+func propertyOf(source []byte, kind, name string, attr *hclsyntax.Attribute) Property {
+	value, literal := literalValue(attr.Expr)
+	p := Property{
+		Name: name, Expression: sourceRange(source, attr.Expr.Range()), Value: value, Kind: "expression",
+		Editable: literal && kind == "resource" && editableProperty(attr.Name), Line: attr.NameRange.Start.Line,
+	}
+	if literal {
+		p.Kind = "literal"
+	}
+	if !p.Editable {
+		p.ReadOnlyReason = readOnlyReason(kind, attr.Expr, literal)
+	}
+	return p
+}
+
+var blockNames = map[string]string{
+	"data": "una fuente de datos", "module": "un módulo", "variable": "una variable",
+	"local": "un valor local", "output": "una salida", "provider": "un proveedor",
+}
+
+func readOnlyReason(kind string, expr hclsyntax.Expression, literal bool) string {
+	if literal {
+		if kind != "resource" {
+			return "El inspector solo edita propiedades de recursos; este valor de " + blockNames[kind] + " se edita en el código."
+		}
+		return "Esta propiedad no está entre los literales que el inspector sabe editar; se edita en el código."
+	}
+	if len(expr.Variables()) > 0 {
+		return "Usa una referencia o variable: se edita en el código para no perder la expresión."
+	}
+	switch value := expr.(type) {
+	case *hclsyntax.FunctionCallExpr:
+		return "Llama a una función que calcula Terraform: se edita en el código."
+	case *hclsyntax.LiteralValueExpr:
+		if value.Val.IsNull() {
+			return "Es null: se edita en el código."
+		}
+		if value.Val.Type() == cty.Number {
+			return "Es un número que el navegador no representa sin perder precisión: se edita en el código."
+		}
+	case *hclsyntax.TupleConsExpr, *hclsyntax.ObjectConsExpr:
+		return "Es una lista o un objeto: se edita en el código."
+	}
+	return "Es una expresión calculada: se edita en el código."
 }
 
 func orderedAttributes(body *hclsyntax.Body) []*hclsyntax.Attribute {
@@ -277,8 +396,11 @@ func referenceID(traversal hcl.Traversal) string {
 		return ""
 	}
 	switch root.Name {
-	case "var", "local", "path", "terraform", "each", "count", "self":
+	case "path", "terraform", "each", "count", "self":
 		return ""
+	case "var", "local":
+		// Declared in this module: variables and locals are diagram nodes.
+		return root.Name + "." + name.Name
 	case "data":
 		if len(traversal) > 2 {
 			if dataName, ok := traversal[2].(hcl.TraverseAttr); ok {
@@ -288,6 +410,30 @@ func referenceID(traversal hcl.Traversal) string {
 		return ""
 	default:
 		return root.Name + "." + name.Name
+	}
+}
+
+// providerReference reads a provider meta-argument: aws or aws.west.
+func providerReference(traversal hcl.Traversal) string {
+	root, ok := traversal[0].(hcl.TraverseRoot)
+	if !ok {
+		return ""
+	}
+	if len(traversal) == 1 {
+		return "provider." + root.Name
+	}
+	if alias, ok := traversal[1].(hcl.TraverseAttr); ok && len(traversal) == 2 {
+		return "provider." + root.Name + "." + alias.Name
+	}
+	return ""
+}
+
+func blockCategory(kind, resourceType string) string {
+	switch kind {
+	case "variable", "output", "provider":
+		return kind
+	default:
+		return category(resourceType)
 	}
 }
 

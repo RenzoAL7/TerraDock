@@ -11,7 +11,8 @@ func TestBundledExamplesAndIndependentCopies(t *testing.T) {
 	for _, tt := range []struct {
 		name                string
 		resources, findings int
-	}{{"basic-vpc", 3, 0}, {"web-app", 15, 1}} {
+		// Resources plus the ami_id variable each example declares.
+	}{{"basic-vpc", 4, 0}, {"web-app", 16, 1}} {
 		t.Run(tt.name, func(t *testing.T) {
 			files, err := examples.Load(tt.name)
 			if err != nil {

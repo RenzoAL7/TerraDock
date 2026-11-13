@@ -198,20 +198,23 @@ export function Inspector({
                 {property.kind === "expression" ? (
                   <span className="expression-badge">ƒx expresión</span>
                 ) : (
-                  <LockKeyhole size={12} />
+                  <span className="readonly-badge">
+                    <LockKeyhole size={11} /> solo lectura
+                  </span>
                 )}
               </label>
               <code className="property-expression" title={property.expression}>
                 {property.expression}
               </code>
-              {property.kind === "expression" && (
-                <button
-                  className="text-link"
-                  onClick={() => onCode(resource.file, property.line)}
-                >
-                  Editar en código <ArrowUpRight size={12} />
-                </button>
+              {property.readOnlyReason && (
+                <p className="read-only-reason">{property.readOnlyReason}</p>
               )}
+              <button
+                className="text-link"
+                onClick={() => onCode(resource.file, property.line)}
+              >
+                Editar en código <ArrowUpRight size={12} />
+              </button>
             </div>
           ))}
         </section>

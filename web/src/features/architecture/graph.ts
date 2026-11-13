@@ -8,7 +8,20 @@ export type ResourceNodeData = {
 } & Record<string, unknown>;
 export type ResourceNode = Node<ResourceNodeData>;
 export const isScope = (r: Resource) =>
-  ["aws_vpc", "aws_subnet"].includes(r.type);
+  r.block === "resource" && ["aws_vpc", "aws_subnet"].includes(r.type);
+
+/**
+ * Loose nodes are laid out in lanes, each starting a new column: resources,
+ * data sources and modules first (as before), then providers, variables,
+ * locals and outputs.
+ */
+const lanes: Partial<Record<Resource["block"], number>> = {
+  provider: 1,
+  variable: 2,
+  local: 3,
+  output: 4,
+};
+export const laneOf = (r: Resource) => lanes[r.block] ?? 0;
 
 /** Only explicit VPC/subnet references create containment. Other links remain edges. */
 export function buildGraph(
@@ -107,11 +120,15 @@ export function buildGraph(
     place(r, x, 30);
     x += size.width + 42;
   });
-  roots
-    .filter((r) => !isScope(r))
-    .forEach((r, i) =>
-      place(r, x + Math.floor(i / 6) * 248, 44 + (i % 6) * 130),
+  const loose = roots.filter((r) => !isScope(r));
+  let column = 0;
+  for (let lane = 0; lane <= 4; lane++) {
+    const items = loose.filter((r) => laneOf(r) === lane);
+    items.forEach((r, i) =>
+      place(r, x + (column + Math.floor(i / 6)) * 248, 44 + (i % 6) * 130),
     );
+    column += Math.ceil(items.length / 6);
+  }
   const edges = relationships
     .filter((e) => byId.has(e.source) && byId.has(e.target))
     .filter((e) => parent(byId.get(e.target)!) !== e.source)
@@ -145,6 +162,10 @@ export const categoryNames: Record<string, string> = {
   storage: "Storage",
   database: "Database",
   loadbalancer: "Load balancing",
+  variable: "Variables",
+  local: "Valores locales",
+  output: "Salidas",
+  provider: "Proveedores",
   other: "Otros",
 };
 export function shortType(type: string) {
@@ -161,6 +182,11 @@ export function shortType(type: string) {
     aws_route_table: "Route table",
     aws_route: "Route",
     aws_nat_gateway: "NAT gateway",
+    variable: "Variable",
+    local: "Valor local",
+    output: "Salida",
+    provider: "Proveedor",
+    module: "Módulo",
   };
   return names[type] ?? type.replace(/^aws_/, "").replaceAll("_", " ");
 }

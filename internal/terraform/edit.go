@@ -36,8 +36,8 @@ func EditLiteral(content, filename, resourceID, property string, value any) (str
 	body := parsed.Body.(*hclsyntax.Body)
 	var target *hclsyntax.Block
 	for _, block := range body.Blocks {
-		id, _, _, ok := blockIdentity(block)
-		if !ok || id != resourceID || block.Type != "resource" {
+		id, kind, _, _, _ := blockIdentity(block)
+		if kind != "resource" || id != resourceID {
 			continue
 		}
 		if target != nil {

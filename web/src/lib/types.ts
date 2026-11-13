@@ -6,7 +6,14 @@ export type Category =
   | "storage"
   | "database"
   | "loadbalancer"
+  | "variable"
+  | "local"
+  | "output"
+  | "provider"
   | "other";
+/** The HCL block a declaration comes from; locals give one per key. */
+export type BlockKind =
+  "resource" | "data" | "module" | "variable" | "local" | "output" | "provider";
 export interface SourceFile {
   path: string;
   content: string;
@@ -19,9 +26,12 @@ export interface Property {
   kind: "literal" | "expression";
   editable: boolean;
   line: number;
+  /** Why the inspector cannot edit it (set for every read-only property). */
+  readOnlyReason?: string;
 }
 export interface Resource {
   id: string;
+  block: BlockKind;
   type: string;
   name: string;
   file: string;
@@ -96,6 +106,7 @@ export function normalizeProject(project: Project): Project {
     files: project.files ?? [],
     resources: (project.resources ?? []).map((r) => ({
       ...r,
+      block: r.block ?? "resource",
       properties: r.properties ?? [],
       dependsOn: r.dependsOn ?? [],
     })),

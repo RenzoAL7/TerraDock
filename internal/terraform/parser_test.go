@@ -56,7 +56,7 @@ resource "aws_instance" "web" {
 		"ignored.txt": `this is not Terraform`,
 	}
 	a := Parse(files)
-	if !a.Valid || len(a.Resources) != 5 {
+	if !a.Valid || len(a.Resources) != 6 {
 		t.Fatalf("unexpected analysis: %#v", a)
 	}
 	if got := resourceByID(t, a, "aws_vpc.main").Label; got != "VPC de demostración" {
@@ -70,11 +70,13 @@ resource "aws_instance" "web" {
 	if p.Expression != "var.size" || p.Editable || p.Value != nil || p.Line != 5 {
 		t.Fatalf("variable default must not become a resolved value: %#v", p)
 	}
-	if !reflect.DeepEqual(web.DependsOn, []string{"aws_subnet.app", "aws_vpc.main", "data.aws_ami.linux", "module.network"}) {
+	if !reflect.DeepEqual(web.DependsOn, []string{"aws_subnet.app", "aws_vpc.main", "data.aws_ami.linux", "module.network", "var.replicas", "var.size"}) {
 		t.Fatalf("unexpected dependencies: %#v", web.DependsOn)
 	}
-	if len(a.Edges) != 6 || len(a.Diagnostics) != 2 {
-		t.Fatalf("want references plus explicit dependency, module/count warnings: %#v", a)
+	// Six references (var.size included) plus the explicit dependency; warnings
+	// for the module, count, and the undeclared var.replicas.
+	if len(a.Edges) != 7 || len(a.Diagnostics) != 3 {
+		t.Fatalf("want references plus explicit dependency, module/count/unresolved warnings: %#v", a)
 	}
 	// Filename/map iteration order cannot change diagram or diagnostic ordering.
 	for i := 0; i < 10; i++ {
@@ -170,5 +172,221 @@ resource "aws_instance" "web" { vpc_id = data.aws_vpc.existing.id }
 	}
 	if p := resourceByID(t, a, "aws_subnet.app").ParentID; p != "aws_vpc.main" {
 		t.Fatalf("legitimate VPC grouping lost: %s", p)
+	}
+}
+
+func hasEdge(a Analysis, source, target string) bool {
+	for _, e := range a.Edges {
+		if e.Source == source && e.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDiagnostic(a Analysis, severity, text string) bool {
+	for _, d := range a.Diagnostics {
+		if d.Severity == severity && strings.Contains(d.Message, text) && d.File != "" && d.Line > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func TestVariablesAreNodesWithEdges(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `variable "size" {
+  type    = string
+  default = "t3.micro"
+  validation {
+    condition     = length(var.size) > 0
+    error_message = "Requerido."
+  }
+}
+resource "aws_instance" "web" { instance_type = var.size }
+`})
+	v := resourceByID(t, a, "var.size")
+	if !a.Valid || v.Block != "variable" || v.Category != "variable" || v.Line != 1 || v.Name != "size" {
+		t.Fatalf("variable node: %#v", v)
+	}
+	if d := propertyByName(t, v, "default"); d.Value != "t3.micro" || d.Editable || !strings.Contains(d.ReadOnlyReason, "variable") {
+		t.Fatalf("variable default must be shown, read-only, with a reason: %#v", d)
+	}
+	if propertyByName(t, v, "validation").ReadOnlyReason == "" {
+		t.Fatal("nested validation block needs a reason")
+	}
+	// The validation's own reference to var.size is not a self edge.
+	if !hasEdge(a, "var.size", "aws_instance.web") || len(a.Edges) != 1 {
+		t.Fatalf("want one edge var.size → aws_instance.web: %#v", a.Edges)
+	}
+}
+
+func TestVariableLimits(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `variable {}
+resource "aws_instance" "web" { ami = var.missing }
+`})
+	if a.Valid || !hasDiagnostic(a, "error", "variable no tiene las etiquetas") {
+		t.Fatalf("variable without a name must be an error: %#v", a.Diagnostics)
+	}
+	if !hasDiagnostic(a, "warning", "var.missing") || len(a.Edges) != 0 {
+		t.Fatalf("an undeclared variable is reported, not drawn: %#v", a)
+	}
+}
+
+func TestLocalsGiveOneNodePerKey(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `locals {
+  prefix = "app"
+  name   = "${local.prefix}-${var.env}"
+}
+locals {
+  cidr = "10.0.0.0/16"
+}
+variable "env" {}
+resource "aws_vpc" "main" {
+  cidr_block = local.cidr
+  tags       = { Name = local.name }
+}
+`})
+	if !a.Valid {
+		t.Fatalf("invalid: %#v", a.Diagnostics)
+	}
+	name := resourceByID(t, a, "local.name")
+	if name.Block != "local" || name.Line != 3 || len(name.Properties) != 1 || name.Properties[0].Expression != `"${local.prefix}-${var.env}"` {
+		t.Fatalf("local value must keep its own expression and line: %#v", name)
+	}
+	if p := resourceByID(t, a, "local.prefix").Properties[0]; p.Value != "app" || p.Editable || p.ReadOnlyReason == "" {
+		t.Fatalf("literal local is shown read-only with a reason: %#v", p)
+	}
+	for _, edge := range [][2]string{{"local.prefix", "local.name"}, {"var.env", "local.name"}, {"local.cidr", "aws_vpc.main"}, {"local.name", "aws_vpc.main"}} {
+		if !hasEdge(a, edge[0], edge[1]) {
+			t.Fatalf("missing edge %s → %s: %#v", edge[0], edge[1], a.Edges)
+		}
+	}
+	// A local feeding vpc_id never becomes a layout container.
+	if resourceByID(t, a, "aws_vpc.main").ParentID != "" {
+		t.Fatal("a VPC cannot be nested")
+	}
+}
+
+func TestLocalsLimits(t *testing.T) {
+	a := Parse(map[string]string{
+		"a.tf": "locals {\n  name = \"a\"\n}\n",
+		"b.tf": "locals {\n  name = \"b\"\n}\nlocals \"labelled\" {\n  x = 1\n}\n",
+	})
+	if a.Valid || !hasDiagnostic(a, "error", "Declaración duplicada local.name") || !hasDiagnostic(a, "error", "locals no lleva etiquetas") {
+		t.Fatalf("duplicate keys and labelled locals are errors: %#v", a.Diagnostics)
+	}
+	if empty := Parse(map[string]string{"main.tf": "locals {}\n"}); !empty.Valid || len(empty.Resources) != 0 {
+		t.Fatalf("an empty locals block draws nothing: %#v", empty)
+	}
+}
+
+func TestOutputsReceiveEdges(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `resource "aws_instance" "web" {}
+output "address" {
+  value       = aws_instance.web.private_ip
+  description = "IP privada"
+  sensitive   = true
+}
+`})
+	out := resourceByID(t, a, "output.address")
+	if !a.Valid || out.Block != "output" || out.Category != "output" || !hasEdge(a, "aws_instance.web", "output.address") {
+		t.Fatalf("output node or edge missing: %#v", a)
+	}
+	if p := propertyByName(t, out, "value"); p.Editable || !strings.Contains(p.ReadOnlyReason, "referencia") {
+		t.Fatalf("output value is an expression with a reason: %#v", p)
+	}
+}
+
+func TestOutputLimits(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `output "a" { value = 1 }
+output "a" { value = 2 }
+output { value = 3 }
+`})
+	if a.Valid || !hasDiagnostic(a, "error", "Declaración duplicada output.a") || !hasDiagnostic(a, "error", "output no tiene las etiquetas") {
+		t.Fatalf("duplicate and unnamed outputs are errors: %#v", a.Diagnostics)
+	}
+}
+
+func TestProvidersWithAliases(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `variable "region" {}
+provider "aws" { region = var.region }
+provider "aws" {
+  alias  = "west"
+  region = "us-west-2"
+}
+resource "aws_s3_bucket" "logs" { provider = aws.west }
+resource "aws_s3_bucket" "data" { provider = aws }
+module "net" {
+  source    = "./net"
+  providers = { aws = aws.west }
+}
+`})
+	if !a.Valid {
+		t.Fatalf("invalid: %#v", a.Diagnostics)
+	}
+	west := resourceByID(t, a, "provider.aws.west")
+	if west.Block != "provider" || west.Name != "aws.west" || west.Line != 3 {
+		t.Fatalf("aliased provider: %#v", west)
+	}
+	if resourceByID(t, a, "provider.aws").Name != "aws" {
+		t.Fatal("default provider configuration missing")
+	}
+	for _, edge := range [][2]string{{"var.region", "provider.aws"}, {"provider.aws.west", "aws_s3_bucket.logs"}, {"provider.aws", "aws_s3_bucket.data"}, {"provider.aws.west", "module.net"}} {
+		if !hasEdge(a, edge[0], edge[1]) {
+			t.Fatalf("missing edge %s → %s: %#v", edge[0], edge[1], a.Edges)
+		}
+	}
+	if hasDiagnostic(a, "warning", "aws.west") {
+		t.Fatalf("a declared alias is not unresolved: %#v", a.Diagnostics)
+	}
+}
+
+func TestProviderLimits(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `provider "aws" {}
+provider "aws" {}
+provider "aws" { alias = var.name }
+resource "aws_s3_bucket" "b" { provider = aws.east }
+resource "aws_s3_bucket" "c" { provider = google }
+`})
+	if a.Valid || !hasDiagnostic(a, "error", "Declaración duplicada provider.aws") || !hasDiagnostic(a, "error", "alias del proveedor aws debe ser un texto literal") {
+		t.Fatalf("duplicate defaults and computed aliases are errors: %#v", a.Diagnostics)
+	}
+	if !hasDiagnostic(a, "warning", "provider.aws.east") {
+		t.Fatalf("an undeclared alias is reported: %#v", a.Diagnostics)
+	}
+	// A provider used without a block relies on its implicit default.
+	if hasDiagnostic(a, "warning", "provider.google") {
+		t.Fatalf("implicit default provider must not warn: %#v", a.Diagnostics)
+	}
+}
+
+func TestReadOnlyReasonsExplainEachCase(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": `resource "aws_db_instance" "db" {
+  allocated_storage = 20
+  engine            = "postgres"
+  instance_class    = lower("DB.T3.MICRO")
+  storage_type      = null
+  port              = 9007199254740993
+  tags              = { Name = "db" }
+  count             = 2
+  identifier        = "${var.prefix}-db"
+}
+`})
+	db := resourceByID(t, a, "aws_db_instance.db")
+	if p := propertyByName(t, db, "allocated_storage"); !p.Editable || p.ReadOnlyReason != "" {
+		t.Fatalf("editable literals carry no reason: %#v", p)
+	}
+	for name, want := range map[string]string{
+		"engine":         "no está entre los literales",
+		"instance_class": "función",
+		"storage_type":   "null",
+		"port":           "precisión",
+		"tags":           "lista o un objeto",
+		"count":          "no está entre los literales",
+		"identifier":     "referencia o variable",
+	} {
+		if p := propertyByName(t, db, name); p.Editable || !strings.Contains(p.ReadOnlyReason, want) {
+			t.Errorf("%s: want reason containing %q, got %#v", name, want, p)
+		}
 	}
 }

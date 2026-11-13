@@ -19,6 +19,7 @@ const other = {
 };
 const resource = {
   id: "aws_instance.web",
+  block: "resource",
   type: "aws_instance",
   file: "main.tf",
   properties: [property, other],

@@ -79,7 +79,7 @@ Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así 
 
 ## Qué puedes hacer
 
-- **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones.
+- **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones. Las variables, los locals, los outputs y los proveedores también aparecen, en sus propias columnas; los bloques con `count` o `for_each` llevan una marca.
 - **Editar en ambos sentidos, en tiempo real.**
   - Lo que escribes en el código actualiza el diagrama y el inspector. El análisis arranca 60 ms después de la última tecla; con 300 recursos, el p95 medido hasta que el diagrama muestra el cambio es de unos 95 ms.
   - Lo que cambias en el inspector se escribe en el código al momento.
