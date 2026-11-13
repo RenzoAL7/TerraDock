@@ -4,6 +4,29 @@ Objetivo: un cambio en archivo, código o inspector llega al diagrama en menos d
 1 s con 300 recursos. Lo comprueba la prueba e2e
 `con 300 recursos, archivo, código e inspector llegan al diagrama en menos de 1 s`.
 
+## Medición (2026-11-13, MacBook ARM, Chromium)
+
+Tiempo desde el cambio hasta que el nodo muestra el valor nuevo, con 300
+recursos. Tres corridas de la prueba e2e por versión, sin otras pruebas de
+navegador en marcha. Se indica la mediana y, entre paréntesis, las tres
+corridas.
+
+| Camino          | `main` (f8df7ba)         | `feat/producto-fiable`   |
+| --------------- | -----------------------: | -----------------------: |
+| Archivo externo |     55 ms (55 · 55 · 55) |     55 ms (53 · 55 · 55) |
+| Inspector       | 228 ms (228 · 227 · 231) | 237 ms (241 · 237 · 237) |
+| Código          | 141 ms (142 · 141 · 136) | 146 ms (139 · 147 · 146) |
+
+Los tres caminos siguen muy por debajo de 1 s. El inspector tarda unos 9 ms
+más (4 %) y los rangos de las corridas no se solapan; el código, 5 ms más,
+dentro del ruido. El proyecto de prueba solo tiene recursos: no hay nodos de
+variable, local, output ni provider que dibujar. Guardar borradores en
+IndexedDB tampoco está en el camino de la sincronización: se escribe con
+retardo y de forma asíncrona. La causa de los 9 ms no está aislada.
+
+Las cifras de 2026-11-12 no son comparables con estas: se tomaron en otra
+sesión y con otra carga del equipo.
+
 ## Medición (2026-11-12, MacBook ARM, Chromium)
 
 Latencia p95 desde el cambio hasta que el nodo muestra el valor nuevo.
