@@ -13,16 +13,17 @@ corridas.
 
 | Camino          | `main` (f8df7ba)         | `feat/producto-fiable`   |
 | --------------- | -----------------------: | -----------------------: |
-| Archivo externo |     55 ms (55 · 55 · 55) |     55 ms (53 · 55 · 55) |
-| Inspector       | 228 ms (228 · 227 · 231) | 237 ms (241 · 237 · 237) |
-| Código          | 141 ms (142 · 141 · 136) | 146 ms (139 · 147 · 146) |
+| Archivo externo |     54 ms (54 · 55 · 54) |     54 ms (53 · 54 · 56) |
+| Inspector       | 228 ms (229 · 228 · 228) | 230 ms (230 · 230 · 230) |
+| Código          | 136 ms (134 · 144 · 136) | 139 ms (139 · 134 · 140) |
 
-Los tres caminos siguen muy por debajo de 1 s. El inspector tarda unos 9 ms
-más (4 %) y los rangos de las corridas no se solapan; el código, 5 ms más,
-dentro del ruido. El proyecto de prueba solo tiene recursos: no hay nodos de
-variable, local, output ni provider que dibujar. Guardar borradores en
-IndexedDB tampoco está en el camino de la sincronización: se escribe con
-retardo y de forma asíncrona. La causa de los 9 ms no está aislada.
+Los tres caminos siguen muy por debajo de 1 s. El inspector tarda 2 ms más que
+en `main` y el código 3 ms más, este dentro de la variación entre corridas. Una
+medición anterior de la misma rama daba 9 ms más en el inspector; la mejora
+coincide con quitar las explicaciones de solo lectura de la firma de cada nodo
+(`nodeSignature` en `features/architecture/graph.ts`), aunque no se aisló.
+Guardar borradores en IndexedDB no está en el camino de la sincronización: se
+escribe con retardo y de forma asíncrona.
 
 Las cifras de 2026-11-12 no son comparables con estas: se tomaron en otra
 sesión y con otra carga del equipo.
