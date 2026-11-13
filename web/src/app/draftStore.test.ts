@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DRAFT_TTL,
   DraftStore,
-  draftKey,
+  groupOffers,
   projectLocation,
+  storageKey,
   type DraftBackend,
   type StoredDraft,
 } from "./draftStore";
@@ -35,10 +36,10 @@ describe("DraftStore", () => {
   it("keeps a draft per root, project folder and file, and finds it again", async () => {
     const { entries, backend } = memory();
     let now = 1_000;
-    const store = new DraftStore(backend, () => now);
+    const store = new DraftStore(backend, () => now, "tab-a");
     await store.persist("/root", { "main.tf": draft("typed") }, locations);
     expect([...entries.keys()]).toEqual([
-      draftKey("/root", "/root/app", "main.tf"),
+      storageKey("/root", "/root/app", "main.tf", "tab-a"),
     ]);
     now = 2_000;
     // A new tab (a reload) reads what the previous one wrote.
@@ -60,7 +61,7 @@ describe("DraftStore", () => {
 
   it("removes the entry once the draft is saved or discarded", async () => {
     const { entries, backend } = memory();
-    const store = new DraftStore(backend);
+    const store = new DraftStore(backend, Date.now, "tab-a");
     await store.persist(
       "/root",
       { "main.tf": draft("a"), "net.tf": draft("b") },
@@ -69,7 +70,7 @@ describe("DraftStore", () => {
     expect(entries.size).toBe(2);
     await store.persist("/root", { "net.tf": draft("b") }, locations);
     expect([...entries.values()].map((e) => e.file)).toEqual(["net.tf"]);
-    await store.discard(draftKey("/root", "/root/app", "net.tf"));
+    await store.discard(storageKey("/root", "/root/app", "net.tf", "tab-a"));
     expect(entries.size).toBe(0);
   });
 
@@ -83,6 +84,53 @@ describe("DraftStore", () => {
     // The reloaded tab starts with no drafts in memory.
     await new DraftStore(backend).persist("/root", {}, locations);
     expect(entries.size).toBe(1);
+  });
+
+  it("keeps the draft of another open tab when this tab writes or drops one of the same file", async () => {
+    const { entries, backend } = memory();
+    const c = new DraftStore(backend, Date.now, "tab-c");
+    const d = new DraftStore(backend, Date.now, "tab-d");
+    await d.persist("/root", { "main.tf": draft("from D") }, locations);
+    await c.persist("/root", { "main.tf": draft("from C") }, locations);
+    expect([...entries.values()].map((e) => [e.tab, e.content]).sort()).toEqual(
+      [
+        ["tab-c", "from C"],
+        ["tab-d", "from D"],
+      ],
+    );
+    // C saves its file: only C's copy goes away.
+    await c.persist("/root", {}, locations);
+    expect([...entries.values()].map((e) => e.content)).toEqual(["from D"]);
+  });
+
+  it("restoring another tab's draft moves it under this tab's key", async () => {
+    const { entries, backend } = memory();
+    await new DraftStore(backend, Date.now, "closed").persist(
+      "/root",
+      { "main.tf": draft("left") },
+      locations,
+    );
+    const store = new DraftStore(backend, Date.now, "new");
+    const [entry] = await store.load("/root", "/root/app");
+    store.adopt(entry);
+    await store.persist("/root", { "main.tf": draft("left") }, locations);
+    expect([...entries.values()].map((e) => e.tab)).toEqual(["new"]);
+  });
+
+  it("groups the drafts of the same file, newest first", () => {
+    const entry = (file: string, savedAt: number, tab: string) =>
+      ({ key: `${file}-${tab}`, file, savedAt, tab }) as StoredDraft;
+    expect(
+      groupOffers([
+        entry("main.tf", 1, "a"),
+        entry("net.tf", 2, "a"),
+        entry("main.tf", 3, "b"),
+      ]).map((g) => [g.file, g.entries.map((e) => e.tab)]),
+    ).toEqual([
+      ["main.tf", ["b", "a"]],
+      ["net.tf", ["a"]],
+    ]);
+    expect(groupOffers([])).toEqual([]);
   });
 
   it("drops drafts older than seven days when reading", async () => {

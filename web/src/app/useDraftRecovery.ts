@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Draft, Project, Session } from "../lib/types";
 import {
   DraftStore,
+  groupOffers,
   openIndexedDb,
   projectLocation,
+  TAB_ID,
   type StoredDraft,
 } from "./draftStore";
 
@@ -12,7 +14,9 @@ const PERSIST_DELAY = 400;
 
 let shared: Promise<DraftStore> | null = null;
 function draftStore() {
-  shared ??= openIndexedDb().then((backend) => new DraftStore(backend));
+  shared ??= openIndexedDb().then(
+    (backend) => new DraftStore(backend, Date.now, TAB_ID),
+  );
   return shared;
 }
 
@@ -51,7 +55,7 @@ export function useDraftRecovery(
       const files = projectRef.current?.files ?? [];
       const offered: StoredDraft[] = [];
       for (const entry of found) {
-        if (store.owns(entry.key) || draftsRef.current[entry.file]) continue;
+        if (store.owns(entry.key) || entry.tab === store.tab) continue;
         // Nothing to recover when the file already has the draft's text.
         if (files.find((f) => f.path === entry.file)?.content === entry.content)
           void store.discard(entry.key);
@@ -118,5 +122,7 @@ export function useDraftRecovery(
     setOffers((current) => current.filter((o) => o.key !== entry.key));
     void draftStore().then((store) => store.discard(entry.key));
   }, []);
-  return { offers, restore, discard };
+  // Several closed tabs may have left a draft of the same file.
+  const groups = useMemo(() => groupOffers(offers), [offers]);
+  return { offers: groups, restore, discard };
 }

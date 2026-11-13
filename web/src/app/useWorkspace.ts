@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage } from "../lib/api";
 import type { Draft, Project, Session } from "../lib/types";
 import { mutationResult, ProjectInbox } from "./mergeProject";
-import { draftKey, projectLocation } from "./draftStore";
+import { draftKey, newTabId, projectLocation, TAB_ID } from "./draftStore";
 
 const startupConnectionError =
   "No se pudo conectar con el servidor local. Comprueba que TerraDock está ejecutándose y vuelve a intentar.";
@@ -161,11 +161,12 @@ function presenceMessage(data: unknown): PresenceMessage | null {
 export class DraftPresence {
   private mine: string[] = [];
   private others = new Map<string, string[]>();
-  readonly tab = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   constructor(
     private channel: PresenceChannel | null,
     private onChange: (keys: ReadonlySet<string>) => void,
+    /** Same id the draft store writes under, so both name this tab alike. */
+    readonly tab: string = newTabId(),
   ) {
     if (!channel) return;
     channel.onmessage = (event: MessageEvent) => this.receive(event.data);
@@ -225,7 +226,7 @@ export function useOtherTabDrafts(
       typeof BroadcastChannel === "undefined"
         ? null
         : new BroadcastChannel("terradock-drafts");
-    const current = new DraftPresence(channel, setOthers);
+    const current = new DraftPresence(channel, setOthers, TAB_ID);
     presence.current = current;
     const leave = () => current.close();
     window.addEventListener("pagehide", leave);

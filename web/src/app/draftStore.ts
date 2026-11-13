@@ -9,6 +9,8 @@ export const DRAFT_TTL = 7 * 24 * 60 * 60 * 1000;
  */
 export interface StoredDraft {
   key: string;
+  /** Tab that wrote it; absent in entries written before tabs were told apart. */
+  tab?: string;
   instanceRoot: string;
   /** Project folder for local projects, or the example id. */
   projectPath: string;
@@ -26,12 +28,50 @@ export interface DraftBackend {
   remove(key: string): Promise<void>;
 }
 
+/** Identity of a file across tabs: root, project folder and file. */
 export function draftKey(
   instanceRoot: string,
   projectPath: string,
   file: string,
 ) {
   return JSON.stringify([instanceRoot, projectPath, file]);
+}
+
+/**
+ * Where one tab keeps its draft of a file. Each tab writes its own entry, so
+ * two open tabs never overwrite or delete each other's copy.
+ */
+export function storageKey(
+  instanceRoot: string,
+  projectPath: string,
+  file: string,
+  tab: string,
+) {
+  return JSON.stringify([instanceRoot, projectPath, file, tab]);
+}
+
+export function newTabId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** This page's tab: shared by the draft store and the presence channel. */
+export const TAB_ID = newTabId();
+
+/** Stored drafts of the same file (one per tab that left it), newest first. */
+export interface DraftOffer {
+  file: string;
+  entries: StoredDraft[];
+}
+
+/** Group entries by file, newest file and newest entry first. */
+export function groupOffers(entries: readonly StoredDraft[]): DraftOffer[] {
+  const byFile = new Map<string, StoredDraft[]>();
+  for (const entry of [...entries].sort((a, b) => b.savedAt - a.savedAt)) {
+    const list = byFile.get(entry.file);
+    if (list) list.push(entry);
+    else byFile.set(entry.file, [entry]);
+  }
+  return [...byFile].map(([file, list]) => ({ file, entries: list }));
 }
 
 /** Where a project lives: its folder, or the example id (examples have none). */
@@ -55,6 +95,7 @@ export class DraftStore {
   constructor(
     private backend: DraftBackend | null,
     private now: () => number = Date.now,
+    readonly tab: string = newTabId(),
   ) {}
 
   get available() {
@@ -101,7 +142,7 @@ export class DraftStore {
     for (const [file, draft] of Object.entries(drafts)) {
       const projectPath = locations.get(draft.projectId);
       if (projectPath === undefined) continue;
-      const key = draftKey(instanceRoot, projectPath, file);
+      const key = storageKey(instanceRoot, projectPath, file, this.tab);
       const previous = this.written.get(key);
       if (
         previous &&
@@ -113,6 +154,7 @@ export class DraftStore {
       }
       const entry: StoredDraft = {
         key,
+        tab: this.tab,
         instanceRoot,
         projectPath,
         file,
@@ -124,6 +166,7 @@ export class DraftStore {
       next.set(key, entry);
       await this.attempt(() => this.backend!.put(entry), undefined);
     }
+    // Only this tab's entries (and ones it restored) are removed here.
     for (const key of this.written.keys())
       if (!next.has(key))
         await this.attempt(() => this.backend!.remove(key), undefined);

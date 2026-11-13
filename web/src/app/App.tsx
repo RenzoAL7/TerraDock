@@ -35,6 +35,7 @@ import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
 import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
+import type { StoredDraft } from "./draftStore";
 import { blockEnd, resourceAtLine } from "./blocks";
 import { DeployPanel } from "../features/deploy/DeployPanel";
 import { deployMarks, useFloci } from "../features/deploy/useFloci";
@@ -385,7 +386,7 @@ export default function App() {
     setReveal((n) => n + 1);
     setView("code");
   };
-  const restoreDraft = (entry: (typeof recovery.offers)[number]) => {
+  const restoreDraft = (entry: StoredDraft) => {
     const restored = recovery.restore(entry);
     if (!restored) return;
     const next = { ...draftsRef.current, [entry.file]: restored };
@@ -726,10 +727,16 @@ export default function App() {
       )}
       {/* A draft that another open tab is editing is not offered here. */}
       {recovery.offers
-        .filter((entry) => !otherTabs.has(entry.file))
-        .map((entry) => {
+        .filter((offer) => !otherTabs.has(offer.file))
+        .map(({ entries: [entry, ...older] }) => {
           const saved = project.files.find((f) => f.path === entry.file);
           const current = saved?.revision === entry.baseRevision;
+          // Several closed tabs may have left one each: newest first.
+          const more = older.length
+            ? older.length === 1
+              ? " Hay otro más antiguo; se ofrece después."
+              : ` Hay ${older.length} más antiguos; se ofrecen después.`
+            : "";
           return (
             <div
               className="global-message recovery-message"
@@ -743,6 +750,7 @@ export default function App() {
                   : current
                     ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
                     : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
+                {more}
               </span>
               {saved ? (
                 <button onClick={() => restoreDraft(entry)}>
