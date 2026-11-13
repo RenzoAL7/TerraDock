@@ -173,6 +173,24 @@ export class DraftStore {
     this.written = next;
   }
 
+  /**
+   * Remove every stored draft of this browser profile except the ones this
+   * tab is keeping for its open drafts. Resolves to how many were removed.
+   */
+  clear() {
+    return this.serial(async () => {
+      const entries = await this.attempt(() => this.backend!.all(), []);
+      let removed = 0;
+      for (const entry of entries) {
+        if (this.written.has(entry.key)) continue;
+        await this.attempt(() => this.backend!.remove(entry.key), undefined);
+        if (!this.backend) break;
+        removed++;
+      }
+      return removed;
+    });
+  }
+
   /** Forget a stored draft the user declined to restore. */
   discard(key: string) {
     this.written.delete(key);
@@ -181,7 +199,7 @@ export class DraftStore {
     );
   }
 
-  private serial(work: () => Promise<void>): Promise<void> {
+  private serial<T>(work: () => Promise<T>): Promise<T> {
     const job = this.queue.then(work);
     this.queue = job.catch(() => undefined);
     return job;

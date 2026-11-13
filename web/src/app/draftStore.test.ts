@@ -133,6 +133,20 @@ describe("DraftStore", () => {
     expect(groupOffers([])).toEqual([]);
   });
 
+  it("clears stored drafts of other tabs but keeps this tab's open ones", async () => {
+    const { entries, backend } = memory();
+    await new DraftStore(backend, Date.now, "closed").persist(
+      "/root",
+      { "main.tf": draft("left"), "net.tf": draft("left too") },
+      locations,
+    );
+    const store = new DraftStore(backend, Date.now, "open");
+    await store.persist("/root", { "main.tf": draft("mine") }, locations);
+    expect(await store.clear()).toBe(2);
+    expect([...entries.values()].map((e) => e.content)).toEqual(["mine"]);
+    expect(await new DraftStore(null).clear()).toBe(0);
+  });
+
   it("drops drafts older than seven days when reading", async () => {
     const { entries, backend } = memory();
     let now = 0;

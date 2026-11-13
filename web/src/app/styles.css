@@ -1499,6 +1499,16 @@ a {
   padding-top: 16px;
   border-top: 1px solid #e5ecf2;
 }
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.help-content .field-note {
+  margin: 6px 0 0;
+}
 .spin {
   animation: spin 1s linear infinite;
 }

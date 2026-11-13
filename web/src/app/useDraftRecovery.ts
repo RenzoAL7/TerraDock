@@ -116,7 +116,12 @@ export function useDraftRecovery(
     setOffers((current) => current.filter((o) => o.key !== entry.key));
     void draftStore().then((store) => store.discard(entry.key));
   }, []);
+  /** Remove what other tabs left in this browser; resolves to the count. */
+  const clearStored = useCallback(async () => {
+    setOffers([]);
+    return (await draftStore()).clear();
+  }, []);
   // Several closed tabs may have left a draft of the same file.
   const groups = useMemo(() => groupOffers(offers), [offers]);
-  return { offers: groups, restore, discard };
+  return { offers: groups, restore, discard, clearStored };
 }

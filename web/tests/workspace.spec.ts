@@ -813,6 +813,36 @@ test("escribir antes de decidir sobre un borrador recuperado no lo borra", async
   await expect(page.locator(".view-lines")).toContainText("t3.nuevo");
 });
 
+test("la ayuda borra los borradores guardados en este navegador", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const left = original.replace('"t3.small"', '"t3.olvidado"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, left);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([left]);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  await page.getByRole("button", { name: "Ayuda" }).click();
+  const clear = page.getByRole("button", {
+    name: "Borrar borradores guardados en este navegador",
+  });
+  await clear.click();
+  await expect(page.getByText("Se borró 1 borrador guardado.")).toBeVisible();
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([]);
+  await expect(offer).toHaveCount(0);
+  // Nothing left: it says so instead of pretending to delete something.
+  await clear.click();
+  await expect(
+    page.getByText("No había borradores guardados de otras pestañas."),
+  ).toBeVisible();
+});
+
 test("al recargar con el archivo cambiado por fuera se ofrece comparar", async ({
   page,
 }) => {

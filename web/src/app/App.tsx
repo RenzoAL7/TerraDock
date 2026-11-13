@@ -125,6 +125,7 @@ export default function App() {
     {},
   );
   const [pending, setPending] = useState<(() => void) | null>(null);
+  const [cleared, setCleared] = useState("");
   const [autosave, setAutosave] = useState(readAutosave);
   const searchRef = useRef<HTMLInputElement>(null);
   const hasUnsaved =
@@ -650,7 +651,10 @@ export default function App() {
           <button
             className="icon-button"
             aria-label="Ayuda"
-            onClick={() => setHelp(true)}
+            onClick={() => {
+              setCleared("");
+              setHelp(true);
+            }}
           >
             <CircleHelp size={19} />
           </button>
@@ -1184,8 +1188,35 @@ export default function App() {
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus
               pestañas. Los borradores sin guardar se conservan en este
-              navegador durante 7 días: al volver a abrir el proyecto puedes
-              restaurarlos.
+              navegador: al volver a abrir el proyecto puedes restaurarlos. Se
+              eliminan al volver a abrir TerraDock en esta dirección pasados 7
+              días. Cualquier otra aplicación servida en el mismo puerto
+              comparte ese almacenamiento.
+            </p>
+            <div className="help-actions">
+              <button
+                className="button-secondary"
+                onClick={() =>
+                  void recovery
+                    .clearStored()
+                    .then((count) =>
+                      setCleared(
+                        count === 0
+                          ? "No había borradores guardados de otras pestañas."
+                          : count === 1
+                            ? "Se borró 1 borrador guardado."
+                            : `Se borraron ${count} borradores guardados.`,
+                      ),
+                    )
+                }
+              >
+                Borrar borradores guardados en este navegador
+              </button>
+              {cleared && <span role="status">{cleared}</span>}
+            </div>
+            <p className="field-note">
+              Los borradores abiertos en esta pestaña se siguen guardando
+              mientras la tengas abierta.
             </p>
           </div>
         </Dialog>
