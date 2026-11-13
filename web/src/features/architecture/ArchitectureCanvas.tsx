@@ -34,7 +34,12 @@ import {
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
 import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
-import { buildGraph, shortType, type ResourceNode } from "./graph";
+import {
+  buildGraph,
+  nodeSignature,
+  shortType,
+  type ResourceNode,
+} from "./graph";
 import type { DeployMark } from "../deploy/useFloci";
 
 const markLabel: Record<DeployMark, string> = {
@@ -63,15 +68,12 @@ function nodeKey(node: ResourceNode) {
     node.selected,
     node.zIndex,
     node.extent,
-    signature(resource),
+    nodeSignature(resource),
     rest,
   ]);
 }
 const sameEdges = (a: Edge[], b: Edge[]) =>
   a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
-/** A stable signature of what a node shows, to flash nodes that changed. */
-const signature = (r: Resource) =>
-  JSON.stringify([r.label, r.parentId, r.properties, r.dependsOn]);
 
 export function ResourceIcon({
   resource,
@@ -255,7 +257,7 @@ function Graph({
   const signatures = useRef<Map<string, string> | null>(null);
   const [updated, setUpdated] = useState<Set<string>>(new Set());
   useEffect(() => {
-    const next = new Map(resources.map((r) => [r.id, signature(r)]));
+    const next = new Map(resources.map((r) => [r.id, nodeSignature(r)]));
     const previous = signatures.current;
     signatures.current = next;
     if (!previous) return;

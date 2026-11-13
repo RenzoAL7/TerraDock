@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Resource, ResourceEdge } from "../../lib/types";
-import { buildGraph, categoryNames, laneOf, shortType } from "./graph";
+import {
+  buildGraph,
+  categoryNames,
+  laneOf,
+  nodeSignature,
+  shortType,
+} from "./graph";
 
 const blocks: Record<string, Resource["block"]> = {
   var: "variable",
@@ -310,5 +316,33 @@ describe("architecture graph", () => {
     expect(shortType("provider")).toBe("Proveedor");
     expect(categoryNames.variable).toBe("Variables");
     expect(categoryNames.provider).toBe("Proveedores");
+  });
+});
+
+describe("nodeSignature", () => {
+  const withProperty = (reason?: string, value = "t3.micro") => ({
+    ...resource("aws_instance.web"),
+    properties: [
+      {
+        name: "instance_type",
+        expression: `"${value}"`,
+        value,
+        kind: "literal" as const,
+        editable: false,
+        line: 3,
+        readOnlyReason: reason,
+      },
+    ],
+  });
+  it("ignores the read-only explanation, which no card shows", () => {
+    expect(nodeSignature(withProperty("Una razón larga."))).toBe(
+      nodeSignature(withProperty("Otra razón distinta.")),
+    );
+    expect(nodeSignature(withProperty("x"))).not.toContain("razón");
+  });
+  it("changes when a shown value changes", () => {
+    expect(nodeSignature(withProperty(undefined, "t3.large"))).not.toBe(
+      nodeSignature(withProperty(undefined, "t3.micro")),
+    );
   });
 });

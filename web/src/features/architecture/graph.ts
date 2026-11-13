@@ -190,3 +190,24 @@ export function shortType(type: string) {
   };
   return names[type] ?? type.replace(/^aws_/, "").replaceAll("_", " ");
 }
+
+/**
+ * What a node shows, to flash nodes that changed and to reuse the rest. The
+ * read-only explanations are left out: they are long, never drawn on a card,
+ * and would be serialized for every node on every update.
+ */
+export function nodeSignature(r: Resource) {
+  return JSON.stringify([
+    r.label,
+    r.parentId,
+    r.properties.map((p) => [
+      p.name,
+      p.expression,
+      p.value,
+      p.kind,
+      p.editable,
+      p.line,
+    ]),
+    r.dependsOn,
+  ]);
+}
