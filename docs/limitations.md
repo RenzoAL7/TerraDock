@@ -53,7 +53,7 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 
 ## Fuera de esta entrega
 
-- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci, desde su pestaña y sobre una copia privada (ver el [README](../README.md#despliegue-local-con-floci)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
+- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci, desde su pestaña y sobre una copia privada (ver el [README](../README.md#desplegar-en-local-con-floci-opcional)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
 - Importar un plan JSON arbitrario o comparar atributos con un estado Terraform. El plan generado contra Floci sí se muestra sobre el diagrama.
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
