@@ -109,7 +109,7 @@ test("explains availability and gives every link a real destination", async ({
   ]);
   // TerraDock is a local tool: the site must not promise accounts,
   // hosted workspaces or cloud execution.
-  const text = await page.locator("body").innerText();
+  const text = (await page.locator("body").innerText()).toLowerCase();
   for (const phrase of [
     "Iniciar sesión",
     "Crear cuenta",
@@ -118,7 +118,7 @@ test("explains availability and gives every link a real destination", async ({
     "Plan y apply en la nube",
     "Próximamente",
   ])
-    expect(text, phrase).not.toContain(phrase);
+    expect(text, phrase).not.toContain(phrase.toLowerCase());
   await expect(page.locator("header").getByRole("button")).toHaveCount(0);
   await expect(
     page.locator("form, input, textarea, [contenteditable=true]"),
