@@ -7,29 +7,55 @@ export type DeployMark = DeployAction | "deployed";
 /**
  * Overlay for the diagram: planned actions when a fresh plan exists,
  * otherwise what is currently present in the Floci state.
+ *
+ * `revision` is the saved project revision the status was read for. The
+ * status is only polled while the Floci tab is visible, so a plan read before
+ * the files changed is dropped here instead of waiting for the server to mark
+ * it stale.
  */
 export function deployMarks(
   status: FlociStatus | null,
   projectId: string,
+  revision?: string,
+  statusRevision?: string,
 ): Record<string, DeployMark> {
   const marks: Record<string, DeployMark> = {};
   if (!status) return marks;
   for (const id of status.deployed) marks[id] = "deployed";
-  if (status.plan && !status.plan.stale && status.plan.projectId === projectId)
+  if (
+    status.plan &&
+    !status.plan.stale &&
+    status.plan.projectId === projectId &&
+    revision === statusRevision
+  )
     Object.assign(marks, status.plan.changes);
   return marks;
 }
 
-export function useFloci(projectId: string | undefined) {
+/**
+ * Floci status for the open project. Nothing is requested while `visible` is
+ * false: opening a folder, editing or viewing the diagram never contacts the
+ * Floci endpoints or asks the server to run Terraform.
+ */
+export function useFloci(
+  projectId: string | undefined,
+  revision: string | undefined,
+  visible: boolean,
+) {
   const [status, setStatus] = useState<FlociStatus | null>(null);
+  const [statusRevision, setStatusRevision] = useState<string>();
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState("");
   const running = status?.job?.state === "running";
   const timer = useRef<number | undefined>(undefined);
+  const revisionRef = useRef(revision);
+  revisionRef.current = revision;
 
   const refresh = useCallback(async () => {
+    const requested = revisionRef.current;
     try {
       setStatus(await flociApi.status());
+      setStatusRevision(requested);
       setAvailable(true);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 503)
@@ -38,6 +64,7 @@ export function useFloci(projectId: string | undefined) {
   }, []);
 
   useEffect(() => {
+    if (!visible) return;
     let active = true;
     const tick = async () => {
       await refresh();
@@ -48,7 +75,7 @@ export function useFloci(projectId: string | undefined) {
       active = false;
       clearTimeout(timer.current);
     };
-  }, [refresh, running, projectId]);
+  }, [refresh, running, projectId, visible]);
 
   const run = useCallback(
     async (
@@ -77,5 +104,14 @@ export function useFloci(projectId: string | undefined) {
     }
   }, [refresh]);
 
-  return { status, available, error, setError, run, cancel, running };
+  return {
+    status,
+    statusRevision,
+    available,
+    error,
+    setError,
+    run,
+    cancel,
+    running,
+  };
 }

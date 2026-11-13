@@ -111,7 +111,7 @@ export default function App() {
   // Saved files + unsaved drafts, re-analyzed as you type.
   const urgentPreview = useRef(false);
   const live = useLivePreview(project, drafts, 60, urgentPreview);
-  const floci = useFloci(project?.id);
+  const floci = useFloci(project?.id, project?.revision, view === "deploy");
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
@@ -296,7 +296,12 @@ export default function App() {
       ),
   );
   const issues = live.diagnostics.length + live.findings.length;
-  const marks = deployMarks(floci.status, project.id);
+  const marks = deployMarks(
+    floci.status,
+    project.id,
+    project.revision,
+    floci.statusRevision,
+  );
   const editorContent = file ? (draft?.content ?? file.content) : "";
   const linked =
     resource && file && resource.file === file.path
