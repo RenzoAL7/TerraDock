@@ -56,6 +56,30 @@ describe("deployMarks", () => {
     });
     expect(deployMarks(null, current, current)).toEqual({});
   });
+
+  it("marks only managed resources of the diagram", () => {
+    // A state or plan address can never be a variable, local, output or
+    // provider node, but the overlay must not mark one even if it collided.
+    const odd = status();
+    odd.deployed = ["aws_vpc.main", "var.region", "output.ip", "aws_gone.x"];
+    odd.plan!.changes = {
+      "aws_subnet.app": "create",
+      "local.name": "update",
+      "provider.aws": "delete",
+    };
+    const nodes = [
+      { id: "aws_vpc.main", block: "resource" as const },
+      { id: "aws_subnet.app", block: "resource" as const },
+      { id: "var.region", block: "variable" as const },
+      { id: "local.name", block: "local" as const },
+      { id: "output.ip", block: "output" as const },
+      { id: "provider.aws", block: "provider" as const },
+    ];
+    expect(deployMarks(odd, current, current, nodes)).toEqual({
+      "aws_vpc.main": "deployed",
+      "aws_subnet.app": "create",
+    });
+  });
 });
 
 describe("pollDelay", () => {

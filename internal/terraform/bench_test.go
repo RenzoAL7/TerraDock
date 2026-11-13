@@ -43,7 +43,8 @@ func LargeProject(n int) map[string]string {
 
 func TestLargeProjectParses(t *testing.T) {
 	a := Parse(LargeProject(300))
-	if !a.Valid || len(a.Resources) != 300 || len(a.Edges) < 200 {
+	// 300 resources plus the ami_id variable they all reference.
+	if !a.Valid || len(a.Resources) != 301 || len(a.Edges) < 200 {
 		t.Fatalf("valid=%v resources=%d edges=%d diags=%v", a.Valid, len(a.Resources), len(a.Edges), a.Diagnostics)
 	}
 }

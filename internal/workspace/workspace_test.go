@@ -433,3 +433,137 @@ func TestEditDraftAppliesLiteralToUnsavedContent(t *testing.T) {
 	_, err = m.EditDraft(initial.ID, "nope.tf", draft, "aws_subnet.public", "cidr_block", "x")
 	errorCode(t, err, "not_found")
 }
+
+// setBeforeReplace installs the writeFile hook for one test.
+func setBeforeReplace(t *testing.T, hook func(stage string)) {
+	t.Helper()
+	beforeReplace = hook
+	t.Cleanup(func() { beforeReplace = func(string) {} })
+}
+
+func TestExternalWriteAfterSyncIsDetected(t *testing.T) {
+	m, project, initial := localProject(t)
+	path := filepath.Join(project, "main.tf")
+	external := strings.Replace(networkSource, "10.0.1.0/24", "10.0.7.0/24", 1)
+	setBeforeReplace(t, func(stage string) {
+		if stage == "synced" {
+			if err := os.WriteFile(path, []byte(external), 0640); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	_, err := m.Save(initial.ID, "main.tf", "# my draft\n", initial.Files[0].Revision)
+	errorCode(t, err, "revision_conflict")
+	if disk, _ := os.ReadFile(path); string(disk) != external {
+		t.Fatalf("external write was lost: %s", disk)
+	}
+	if m.Snapshot().Files[0].Content != external {
+		t.Fatal("the rejected save did not publish the external version")
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(project, ".terradock-save-*")); len(leftovers) != 0 {
+		t.Fatalf("temporary files left behind: %v", leftovers)
+	}
+}
+
+// Documents the remaining race: the last revision check and the rename are
+// not atomic with other programs. A write that lands between them is replaced
+// by the save. The watcher then publishes the saved text, so the app and the
+// disk agree, but the external edit is lost.
+func TestExternalWriteAfterLastCheckIsOverwritten(t *testing.T) {
+	m, project, initial := localProject(t)
+	path := filepath.Join(project, "main.tf")
+	external := strings.Replace(networkSource, "10.0.1.0/24", "10.0.8.0/24", 1)
+	mine := strings.Replace(networkSource, "10.0.0.0/16", "10.9.0.0/16", 1)
+	setBeforeReplace(t, func(stage string) {
+		if stage == "checked" {
+			if err := os.WriteFile(path, []byte(external), 0640); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	next, err := m.Save(initial.ID, "main.tf", mine, initial.Files[0].Revision)
+	if err != nil {
+		t.Fatalf("save inside the race window is not detected today: %v", err)
+	}
+	if disk, _ := os.ReadFile(path); string(disk) != mine || next.Files[0].Content != mine {
+		t.Fatalf("expected the save to win the race, disk: %s", disk)
+	}
+}
+
+func TestExternalCreateRenameAndDeleteReachTheSnapshot(t *testing.T) {
+	m, project, _ := localProject(t)
+	events, cancel := m.Subscribe()
+	defer cancel()
+	<-events
+	extra := `resource "aws_internet_gateway" "gw" {
+  vpc_id = aws_vpc.main.id
+}
+`
+	if err := os.WriteFile(filepath.Join(project, "gateway.tf"), []byte(extra), 0640); err != nil {
+		t.Fatal(err)
+	}
+	created := waitSnapshot(t, events, func(s Snapshot) bool { return len(s.Files) == 2 })
+	if len(created.Resources) != 3 || created.Files[0].Path != "gateway.tf" {
+		t.Fatalf("created file not analyzed: %+v", created.Files)
+	}
+	oldRevision := created.Files[0].Revision
+	if err := os.Rename(filepath.Join(project, "gateway.tf"), filepath.Join(project, "edge.tf")); err != nil {
+		t.Fatal(err)
+	}
+	renamed := waitSnapshot(t, events, func(s Snapshot) bool { return s.Files[0].Path == "edge.tf" })
+	moved := false
+	for _, r := range renamed.Resources {
+		moved = moved || (r.ID == "aws_internet_gateway.gw" && r.File == "edge.tf")
+	}
+	if len(renamed.Files) != 2 || !moved {
+		t.Fatalf("rename did not move the resource to the new file: %+v", renamed.Files)
+	}
+	// A draft still pointing at the old name is orphaned: it cannot be saved
+	// under that name, and nothing is created on disk.
+	_, err := m.Save(renamed.ID, "gateway.tf", extra+"# draft\n", oldRevision)
+	errorCode(t, err, "not_found")
+	if _, err := os.Stat(filepath.Join(project, "gateway.tf")); !os.IsNotExist(err) {
+		t.Fatal("saving an orphaned draft recreated the old file")
+	}
+	if err := os.Remove(filepath.Join(project, "edge.tf")); err != nil {
+		t.Fatal(err)
+	}
+	deleted := waitSnapshot(t, events, func(s Snapshot) bool { return len(s.Files) == 1 })
+	if deleted.Files[0].Path != "main.tf" || len(deleted.Resources) != 2 {
+		t.Fatalf("deleted file still in the snapshot: %+v", deleted.Files)
+	}
+	_, err = m.Save(deleted.ID, "edge.tf", extra, renamed.Files[0].Revision)
+	errorCode(t, err, "not_found")
+}
+
+func TestTerraformJSONIsListedWithAWarningButNotParsed(t *testing.T) {
+	m, project, _ := localProject(t)
+	// Not HCL native syntax: it must not be parsed as such.
+	json := `{"resource": {"aws_s3_bucket": {"logs": {"bucket": "logs"}}}}`
+	if err := os.WriteFile(filepath.Join(project, "extra.tf.json"), []byte(json), 0640); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := m.Open(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Files) != 2 || snapshot.Files[0].Path != "extra.tf.json" || snapshot.Files[0].Content != json {
+		t.Fatalf(".tf.json not listed: %+v", snapshot.Files)
+	}
+	if !snapshot.Valid || len(snapshot.Resources) != 2 {
+		t.Fatal(".tf.json content was interpreted")
+	}
+	warned := false
+	for _, d := range snapshot.Diagnostics {
+		warned = warned || (d.File == "extra.tf.json" && d.Severity == "warning" && strings.Contains(d.Message, ".tf.json"))
+	}
+	if !warned {
+		t.Fatalf("missing .tf.json warning: %+v", snapshot.Diagnostics)
+	}
+	_, err = m.Save(snapshot.ID, "extra.tf.json", "{}", snapshot.Files[0].Revision)
+	errorCode(t, err, "invalid_path")
+	listing, err := m.Directories(filepath.Dir(project))
+	if err != nil || len(listing.Entries) != 1 || !listing.Entries[0].HasTerraform {
+		t.Fatalf("listing: %+v, %v", listing, err)
+	}
+}

@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { api, errorMessage } from "../lib/api";
-import type { Project, Session } from "../lib/types";
+import type { Draft, Project, Session } from "../lib/types";
 import { mutationResult, ProjectInbox } from "./mergeProject";
+import { draftKey, newTabId, projectLocation, TAB_ID } from "./draftStore";
 
 const startupConnectionError =
   "No se pudo conectar con el servidor local. Comprueba que TerraDock está ejecutándose y vuelve a intentar.";
@@ -125,4 +133,194 @@ export function useWorkspace() {
     }
   }, []);
   return { project, session, error, setError, connected, busy, perform };
+}
+
+type PresenceMessage =
+  | { kind: "hello"; tab: string }
+  | { kind: "drafts"; tab: string; keys: string[] }
+  | { kind: "bye"; tab: string };
+
+export type PresenceChannel = Pick<
+  BroadcastChannel,
+  "postMessage" | "close" | "onmessage"
+>;
+
+function presenceMessage(data: unknown): PresenceMessage | null {
+  if (typeof data !== "object" || data === null) return null;
+  const message = data as Partial<PresenceMessage> & { keys?: unknown };
+  if (typeof message.tab !== "string") return null;
+  if (message.kind === "hello" || message.kind === "bye")
+    return message as PresenceMessage;
+  if (
+    message.kind === "drafts" &&
+    Array.isArray(message.keys) &&
+    message.keys.every((k) => typeof k === "string")
+  )
+    return message as PresenceMessage;
+  return null;
+}
+
+/**
+ * Tells the other tabs of this browser which files have unsaved drafts here,
+ * and keeps the set of draft keys they announce. Without BroadcastChannel it
+ * does nothing. Only keys travel between tabs, never file contents.
+ */
+/** How long a new tab listens for the others before trusting what it heard. */
+export const PRESENCE_WINDOW = 100;
+
+export class DraftPresence {
+  private mine: string[] = [];
+  private others = new Map<string, string[]>();
+  /** Every other tab heard from since this page loaded. */
+  private heard = new Set<string>();
+  /** Tabs that said goodbye (closed or left the page). */
+  private gone = new Set<string>();
+  private ready: Promise<void> = Promise.resolve();
+
+  constructor(
+    private channel: PresenceChannel | null,
+    private onChange: (keys: ReadonlySet<string>) => void,
+    /** Same id the draft store writes under, so both name this tab alike. */
+    readonly tab: string = newTabId(),
+  ) {
+    this.listen(channel);
+  }
+
+  /**
+   * Listen again after the page comes back from the back/forward cache: the
+   * channel was closed on `pagehide`. Re-announces this tab's drafts and asks
+   * the others for theirs, since messages sent meanwhile were lost.
+   */
+  reopen(channel: PresenceChannel | null) {
+    this.channel?.close();
+    this.channel = channel;
+    this.others.clear();
+    this.onChange(new Set());
+    this.listen(channel);
+    if (this.mine.length)
+      this.post({ kind: "drafts", tab: this.tab, keys: this.mine });
+  }
+
+  private listen(channel: PresenceChannel | null) {
+    if (!channel) {
+      this.ready = Promise.resolve();
+      return;
+    }
+    channel.onmessage = (event: MessageEvent) => this.receive(event.data);
+    this.post({ kind: "hello", tab: this.tab });
+    // Open tabs answer the hello right away; give them a moment.
+    this.ready = new Promise((resolve) => setTimeout(resolve, PRESENCE_WINDOW));
+  }
+
+  /** Resolves once the other open tabs had time to answer this tab's hello. */
+  settled() {
+    return this.ready;
+  }
+
+  /** Tabs heard from since this page loaded, open or not. */
+  heardTabs(): ReadonlySet<string> {
+    return new Set(this.heard);
+  }
+
+  /** Tabs heard from that have not said goodbye. */
+  liveTabs(): ReadonlySet<string> {
+    return new Set([...this.heard].filter((tab) => !this.gone.has(tab)));
+  }
+
+  publish(keys: string[]) {
+    const sorted = [...keys].sort();
+    if (sorted.join("\n") === this.mine.join("\n")) return;
+    this.mine = sorted;
+    this.post({ kind: "drafts", tab: this.tab, keys: sorted });
+  }
+
+  close() {
+    this.post({ kind: "bye", tab: this.tab });
+    this.channel?.close();
+    this.channel = null;
+  }
+
+  private post(message: PresenceMessage) {
+    try {
+      this.channel?.postMessage(message);
+    } catch {
+      // A closed channel only loses the notice, never edits.
+    }
+  }
+
+  private receive(data: unknown) {
+    const message = presenceMessage(data);
+    if (!message || message.tab === this.tab) return;
+    this.heard.add(message.tab);
+    if (message.kind === "bye") this.gone.add(message.tab);
+    else this.gone.delete(message.tab);
+    if (message.kind === "hello") {
+      // A new tab asks who is editing what.
+      if (this.mine.length)
+        this.post({ kind: "drafts", tab: this.tab, keys: this.mine });
+      return;
+    }
+    if (message.kind === "drafts" && message.keys.length)
+      this.others.set(message.tab, message.keys);
+    else this.others.delete(message.tab);
+    this.onChange(new Set([...this.others.values()].flat()));
+  }
+}
+
+/**
+ * Files of the open project that another tab of this browser is editing
+ * without saving. Announced over BroadcastChannel; nothing leaves the browser.
+ */
+export function useOtherTabDrafts(
+  session: Session | null,
+  project: Project | null,
+  drafts: Record<string, Draft>,
+): {
+  files: ReadonlySet<string>;
+  /** This tab's presence, for recovery to tell open tabs from closed ones. */
+  presence: RefObject<DraftPresence | null>;
+} {
+  const [others, setOthers] = useState<ReadonlySet<string>>(new Set());
+  const presence = useRef<DraftPresence | null>(null);
+  useEffect(() => {
+    const open = () =>
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel("terradock-drafts");
+    const current = new DraftPresence(open(), setOthers, TAB_ID);
+    presence.current = current;
+    const leave = () => current.close();
+    // A page restored from the back/forward cache keeps its drafts: announce
+    // them again on a fresh channel.
+    const back = (event: PageTransitionEvent) => {
+      if (event.persisted) current.reopen(open());
+    };
+    window.addEventListener("pagehide", leave);
+    window.addEventListener("pageshow", back);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      window.removeEventListener("pageshow", back);
+      current.close();
+      presence.current = null;
+    };
+  }, []);
+  const root = session?.root;
+  const location = project ? projectLocation(project) : undefined;
+  const projectId = project?.id;
+  useEffect(() => {
+    if (!root || location === undefined) return;
+    presence.current?.publish(
+      Object.entries(drafts)
+        .filter(([, draft]) => draft.projectId === projectId)
+        .map(([file]) => draftKey(root, location, file)),
+    );
+  }, [root, location, projectId, drafts]);
+  const files = useMemo(() => {
+    if (!root || location === undefined) return new Set<string>();
+    const found = new Set<string>();
+    for (const file of project?.files ?? [])
+      if (others.has(draftKey(root, location, file.path))) found.add(file.path);
+    return found;
+  }, [others, root, location, project?.files]);
+  return { files, presence };
 }

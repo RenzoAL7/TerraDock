@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { Property, Resource } from "../lib/types";
+import { hidesValue, SENSITIVE_TEXT } from "../lib/sensitive";
 import { createDemoEngine } from "./engine";
 import { examples } from "./examples";
 import { DemoGraph } from "./DemoGraph";
@@ -131,7 +132,11 @@ function Inspector({
                 key={`${property.name}:${property.line}`}
               >
                 <span>{property.name}</span>
-                <code>{property.expression}</code>
+                <code>
+                  {hidesValue(resource, property)
+                    ? SENSITIVE_TEXT
+                    : property.expression}
+                </code>
                 <small>Edítalo en el código</small>
               </div>
             ),

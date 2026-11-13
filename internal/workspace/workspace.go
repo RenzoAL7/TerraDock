@@ -335,9 +335,9 @@ func (m *Manager) watch() {
 				poll.Reset(pollWithoutEvents)
 				continue
 			}
-			// Editors often save through temp files and renames; any .tf
-			// entry change (or the directory itself) triggers a re-read.
-			if strings.HasSuffix(event.Name, ".tf") || event.Name == watched {
+			// Editors often save through temp files and renames; any .tf or
+			// .tf.json entry change (or the directory itself) triggers a re-read.
+			if isConfigFile(event.Name) || event.Name == watched {
 				if debounce == nil {
 					debounce = time.After(eventDebounce)
 				}

@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { Resource, ResourceEdge } from "../../lib/types";
-import { buildGraph } from "./graph";
+import {
+  buildGraph,
+  categoryNames,
+  laneOf,
+  nodeSignature,
+  shortType,
+} from "./graph";
+
+const blocks: Record<string, Resource["block"]> = {
+  var: "variable",
+  local: "local",
+  output: "output",
+  provider: "provider",
+};
 
 function resource(id: string, parentId?: string, label = id): Resource {
   const [type, name] = id.split(".");
   return {
     id,
+    block: blocks[type] ?? "resource",
     type,
     name,
     label,
@@ -243,5 +257,92 @@ describe("architecture graph", () => {
     buildGraph(resources, relationships, "aws_instance.web", "web");
     expect(buildGraph(resources, relationships, "")).toEqual(first);
     expect({ resources, relationships }).toEqual(before);
+  });
+
+  it("lays variables, locals, providers and outputs in their own columns after resources", () => {
+    const resources = [
+      resource("output.ip"),
+      resource("var.size"),
+      resource("aws_vpc.main"),
+      resource("aws_instance.web", "aws_vpc.main"),
+      resource("aws_s3_bucket.logs"),
+      resource("local.name"),
+      resource("provider.aws"),
+      resource("var.region"),
+    ];
+    const relationships = [
+      reference("var.size", "aws_instance.web", "instance_type"),
+      reference("aws_instance.web", "output.ip", "value"),
+      reference("var.region", "provider.aws", "region"),
+    ];
+    const { nodes, edges } = buildGraph(resources, relationships, "");
+    const at = (id: string) => nodes.find((node) => node.id === id)!;
+    // None of them is a container, and none is nested.
+    for (const id of ["var.size", "local.name", "output.ip", "provider.aws"]) {
+      expect(at(id).type).toBe("resource");
+      expect(at(id).parentId).toBeUndefined();
+    }
+    // Lane order: resources, then providers, variables, locals, outputs.
+    const x = (id: string) => at(id).position.x;
+    expect(x("aws_s3_bucket.logs")).toBeLessThan(x("provider.aws"));
+    expect(x("provider.aws")).toBeLessThan(x("var.size"));
+    expect(x("var.size")).toBe(x("var.region"));
+    expect(at("var.size").position.y).not.toBe(at("var.region").position.y);
+    expect(x("var.size")).toBeLessThan(x("local.name"));
+    expect(x("local.name")).toBeLessThan(x("output.ip"));
+    // Their references are drawn like any other.
+    expect(edges.map((e) => e.id).sort()).toEqual(
+      relationships.map((r) => r.id).sort(),
+    );
+  });
+
+  it("never treats a variable named like a container as a scope", () => {
+    const variable = { ...resource("var.vpc"), type: "aws_vpc" };
+    const { nodes } = buildGraph(
+      [variable, resource("aws_instance.web", "var.vpc")],
+      [],
+      "",
+    );
+    expect(nodes.every((node) => node.type === "resource")).toBe(true);
+    expect(nodes.every((node) => node.parentId === undefined)).toBe(true);
+  });
+
+  it("names the new kinds of declarations in Spanish", () => {
+    expect(laneOf(resource("aws_instance.web"))).toBe(0);
+    expect(laneOf(resource("output.ip"))).toBe(4);
+    expect(shortType("variable")).toBe("Variable");
+    expect(shortType("local")).toBe("Valor local");
+    expect(shortType("output")).toBe("Salida");
+    expect(shortType("provider")).toBe("Proveedor");
+    expect(categoryNames.variable).toBe("Variables");
+    expect(categoryNames.provider).toBe("Proveedores");
+  });
+});
+
+describe("nodeSignature", () => {
+  const withProperty = (reason?: string, value = "t3.micro") => ({
+    ...resource("aws_instance.web"),
+    properties: [
+      {
+        name: "instance_type",
+        expression: `"${value}"`,
+        value,
+        kind: "literal" as const,
+        editable: false,
+        line: 3,
+        readOnlyReason: reason,
+      },
+    ],
+  });
+  it("ignores the read-only explanation, which no card shows", () => {
+    expect(nodeSignature(withProperty("Una razón larga."))).toBe(
+      nodeSignature(withProperty("Otra razón distinta.")),
+    );
+    expect(nodeSignature(withProperty("x"))).not.toContain("razón");
+  });
+  it("changes when a shown value changes", () => {
+    expect(nodeSignature(withProperty(undefined, "t3.large"))).not.toBe(
+      nodeSignature(withProperty(undefined, "t3.micro")),
+    );
   });
 });

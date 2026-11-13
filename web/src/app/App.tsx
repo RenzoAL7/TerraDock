@@ -18,6 +18,7 @@ import {
   FileCode2,
   FolderOpen,
   GitBranch,
+  History,
   Layers3,
   LayoutPanelLeft,
   Menu,
@@ -30,10 +31,13 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useWorkspace } from "./useWorkspace";
+import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
 import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
-import { blockEnd, resourceAtLine } from "./blocks";
+import { useDraftRecovery } from "./useDraftRecovery";
+import { SaveQueue } from "./saveQueue";
+import type { StoredDraft } from "./draftStore";
+import { declarationEnd, resourceAtLine } from "./blocks";
 import { DeployPanel } from "../features/deploy/DeployPanel";
 import { deployMarks, useFloci } from "../features/deploy/useFloci";
 import {
@@ -47,11 +51,14 @@ import {
   type PropertyDraft,
 } from "../features/inspector/Inspector";
 import { FolderPicker } from "../features/project/FolderPicker";
+import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
 import { api, errorMessage, liveApi } from "../lib/api";
 import type { Draft, Project, Property, Resource } from "../lib/types";
 
 const CodeEditor = lazy(() => import("../features/editor/CodeEditor"));
+// Only loaded when a file changed on disk under a draft.
+const ConflictDiff = lazy(() => import("../features/editor/ConflictDiff"));
 type View = "architecture" | "code" | "split" | "analysis" | "deploy";
 const AUTOSAVE_KEY = "terradock.autosave";
 const AUTOSAVE_DELAY = 600;
@@ -61,6 +68,23 @@ function readAutosave() {
   } catch {
     return true;
   }
+}
+/** First resource worth showing: an instance when there is one. */
+function defaultSelection(project: Project) {
+  return (
+    project.resources.find((r) => r.type === "aws_instance")?.id ??
+    project.resources[0]?.id ??
+    ""
+  );
+}
+const relativeTime = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+/** "hace 5 minutos", "ayer"… for a past timestamp. */
+function ago(timestamp: number) {
+  const minutes = Math.round((timestamp - Date.now()) / 60_000);
+  if (minutes > -60) return relativeTime.format(Math.min(minutes, 0), "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours > -24) return relativeTime.format(hours, "hour");
+  return relativeTime.format(Math.round(hours / 24), "day");
 }
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
@@ -82,9 +106,7 @@ export default function App() {
   const { project, session, error, setError, busy, connected, perform } =
     useWorkspace();
   const [view, setView] = useState<View>("architecture");
-  const [selected, setSelected] = useState(() =>
-    window.matchMedia("(min-width: 901px)").matches ? "aws_instance.app_a" : "",
-  );
+  const [selected, setSelected] = useState("");
   const [filePath, setFilePath] = useState("main.tf");
   const [line, setLine] = useState(1);
   // Nonces: re-reveal in the editor / re-center in the canvas even when the
@@ -104,6 +126,7 @@ export default function App() {
     {},
   );
   const [pending, setPending] = useState<(() => void) | null>(null);
+  const [cleared, setCleared] = useState("");
   const [autosave, setAutosave] = useState(readAutosave);
   const searchRef = useRef<HTMLInputElement>(null);
   const hasUnsaved =
@@ -112,25 +135,37 @@ export default function App() {
   const urgentPreview = useRef(false);
   const live = useLivePreview(project, drafts, 60, urgentPreview);
   const floci = useFloci(project?.id, project?.revision, view === "deploy");
+  // Drafts survive closing or reloading the tab (browser profile, 7 days).
+  const { files: otherTabs, presence } = useOtherTabDrafts(
+    session,
+    project,
+    drafts,
+  );
+  const recovery = useDraftRecovery(session, project, drafts, presence);
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const projectRef = useRef(project);
   projectRef.current = project;
   const applyQueue = useRef(Promise.resolve(""));
-  const savingRef = useRef(false);
+  // Our own save reaches this tab over SSE before its HTTP response; until
+  // then the draft looks based on an old revision but is not a conflict.
+  const [savingPath, setSavingPath] = useState("");
+  // One save at a time; one asked for meanwhile waits instead of vanishing.
+  const [waitingSaves, setWaitingSaves] = useState<readonly string[]>([]);
+  const [saveQueue] = useState(() => new SaveQueue(setWaitingSaves));
 
-  const saveDraft = useCallback(
+  const writeDraft = useCallback(
     async (path: string) => {
       const current = projectRef.current;
       const captured = draftsRef.current[path];
       const file = current?.files.find((f) => f.path === path);
-      if (!current || !captured || !file || savingRef.current) return;
+      if (!current || !captured || !file) return;
       if (
         captured.projectId !== current.id ||
         captured.baseRevision !== file.revision
       )
         return;
-      savingRef.current = true;
+      setSavingPath(path);
       try {
         const next = await perform(() =>
           api.save(
@@ -140,13 +175,28 @@ export default function App() {
             captured.baseRevision,
           ),
         );
-        if (next)
-          setDrafts((latest) => afterFileSave(latest, path, captured, next));
+        if (next) {
+          // A save queued behind this one runs before React renders again:
+          // update the refs now so it reads the saved revision, not the
+          // previous one (which would skip it or report a false conflict).
+          draftsRef.current = afterFileSave(
+            draftsRef.current,
+            path,
+            captured,
+            next,
+          );
+          projectRef.current = next;
+          setDrafts(draftsRef.current);
+        }
       } finally {
-        savingRef.current = false;
+        setSavingPath("");
       }
     },
     [perform],
+  );
+  const saveDraft = useCallback(
+    (path: string) => saveQueue.request(path, () => writeDraft(path)),
+    [saveQueue, writeDraft],
   );
 
   // Graph → code: apply an inspector value to the file draft immediately.
@@ -202,6 +252,15 @@ export default function App() {
     },
     [],
   );
+
+  // On wide screens, select a resource of whatever project the server opened.
+  const initialSelection = useRef(false);
+  useEffect(() => {
+    if (!project || initialSelection.current) return;
+    initialSelection.current = true;
+    if (window.matchMedia("(min-width: 901px)").matches)
+      setSelected((current) => current || defaultSelection(project));
+  }, [project]);
 
   // Inspector text is dropped once the live view reflects it.
   useEffect(() => {
@@ -279,9 +338,14 @@ export default function App() {
   const file =
     project.files.find((f) => f.path === filePath) ?? project.files[0];
   const draft = file && drafts[file.path];
-  const conflict =
-    draft &&
-    (draft.projectId !== project.id || draft.baseRevision !== file.revision);
+  const projectConflict = !!draft && draft.projectId !== project.id;
+  // The file changed on disk under the draft: compare instead of editing.
+  const revisionConflict =
+    !!draft &&
+    !projectConflict &&
+    draft.baseRevision !== file.revision &&
+    savingPath !== file.path;
+  const conflict = projectConflict || revisionConflict;
   const orphanDrafts = Object.entries(drafts).filter(
     ([path, d]) =>
       d.projectId !== project.id || !project.files.some((f) => f.path === path),
@@ -300,11 +364,14 @@ export default function App() {
     floci.status,
     { projectId: project.id, revision: project.revision },
     floci.read,
+    live.resources,
   );
   const editorContent = file ? (draft?.content ?? file.content) : "";
+  // Listed so their warning is visible; their content is not interpreted.
+  const readOnlyFile = !!file && file.path.endsWith(".tf.json");
   const linked =
     resource && file && resource.file === file.path
-      ? { start: resource.line, end: blockEnd(editorContent, resource.line) }
+      ? { start: resource.line, end: declarationEnd(resource, editorContent) }
       : null;
   const conflictCount = Object.entries(drafts).filter(([path, d]) => {
     const f = project.files.find((x) => x.path === path);
@@ -341,6 +408,57 @@ export default function App() {
     setReveal((n) => n + 1);
     setView("code");
   };
+  const restoreDraft = (entry: StoredDraft) => {
+    const restored = recovery.restore(entry);
+    if (!restored) return;
+    const next = { ...draftsRef.current, [entry.file]: restored };
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    code(entry.file);
+  };
+  const discardDraft = (path: string) => {
+    const next = without(draftsRef.current, path);
+    draftsRef.current = next;
+    setDrafts(next);
+    // Inspector text for this file belonged to the discarded draft.
+    const inFile = new Set(
+      live.resources.filter((r) => r.file === path).map((r) => r.id),
+    );
+    setProperties((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(
+          ([key]) => !inFile.has(key.split(":")[0]),
+        ),
+      ),
+    );
+  };
+  /**
+   * Put a draft on top of the disk version it was resolved against, and
+   * optionally save it. If the file changed again since (`basis` is older
+   * than the file), the draft stays in conflict with the newer version.
+   */
+  const rebaseDraft = (
+    path: string,
+    content: string,
+    save: boolean,
+    basis: DiskBasis,
+  ) => {
+    if (!project.files.some((f) => f.path === path)) return;
+    const next = { ...draftsRef.current };
+    if (content === basis.content) delete next[path];
+    else
+      next[path] = {
+        projectId: project.id,
+        content,
+        baseRevision: basis.revision,
+        baseContent: basis.content,
+      };
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    if (save && next[path]) void saveDraft(path);
+  };
   const switchWorkspace = (action: () => void) => {
     if (hasUnsaved) setPending(() => action);
     else action();
@@ -348,11 +466,7 @@ export default function App() {
   const adopt = (next: Project) => {
     setDrafts({});
     setProperties({});
-    setSelected(
-      next.resources.find((r) => r.type === "aws_instance")?.id ??
-        next.resources[0]?.id ??
-        "",
-    );
+    setSelected(defaultSelection(next));
     setFilePath(
       next.files.find((f) => f.path === "main.tf")?.path ??
         next.files[0]?.path ??
@@ -394,13 +508,17 @@ export default function App() {
           <div className="editor-toolbar">
             <span className="sync-state">
               <RadioTower size={11} />
-              {draft
-                ? autosave && !conflict
-                  ? live.valid
-                    ? "En vivo · guardando automáticamente"
-                    : "En vivo · autoguardado en pausa (HCL con errores)"
-                  : "En vivo · sin guardar"
-                : "Archivo sincronizado"}
+              {readOnlyFile
+                ? "Solo lectura · TerraDock no interpreta .tf.json"
+                : waitingSaves.includes(file.path)
+                  ? "Guardado pendiente · espera a que termine otro guardado"
+                  : draft
+                    ? autosave && !conflict
+                      ? live.valid
+                        ? "En vivo · guardando automáticamente"
+                        : "En vivo · autoguardado en pausa (HCL con errores)"
+                      : "En vivo · sin guardar"
+                    : "Archivo sincronizado"}
             </span>
             <div>
               <button
@@ -413,26 +531,7 @@ export default function App() {
                 <Download size={14} />
               </button>
               {draft && (
-                <button
-                  onClick={() => {
-                    const next = without(drafts, file.path);
-                    draftsRef.current = next;
-                    setDrafts(next);
-                    // Inspector text for this file belonged to the discarded draft.
-                    const inFile = new Set(
-                      live.resources
-                        .filter((r) => r.file === file.path)
-                        .map((r) => r.id),
-                    );
-                    setProperties((current) =>
-                      Object.fromEntries(
-                        Object.entries(current).filter(
-                          ([key]) => !inFile.has(key.split(":")[0]),
-                        ),
-                      ),
-                    );
-                  }}
-                >
+                <button onClick={() => discardDraft(file.path)}>
                   Descartar borrador
                 </button>
               )}
@@ -454,54 +553,79 @@ export default function App() {
               </button>
             </div>
           </div>
-          {conflict && (
+          {otherTabs.has(file.path) && (
+            <div className="conflict-banner" role="status">
+              Otra pestaña tiene un borrador sin guardar de {file.path}. Si
+              también lo editas aquí, se guardará primero el que llegue antes y
+              el otro tendrá que compararse con el disco.
+            </div>
+          )}
+          {projectConflict && (
             <div className="conflict-banner" role="alert">
-              Hay una versión nueva del archivo o cambió el proyecto. Tu
-              borrador se conserva. Descárgalo antes de descartarlo para cargar
-              la versión actual.
+              Cambió el proyecto abierto. Tu borrador se conserva: descárgalo
+              antes de descartarlo para cargar la versión actual.
             </div>
           )}
           <div className="editor-content">
             <Suspense
               fallback={<div className="editor-loading">Cargando editor…</div>}
             >
-              <CodeEditor
-                key={`${project.id}:${file.path}`}
-                path={`${project.id}/${file.path}`}
-                value={editorContent}
-                line={line}
-                revealKey={reveal}
-                highlight={linked}
-                diagnostics={live.diagnostics.map((d) => ({
-                  ...d,
-                  file: `${project.id}/${d.file}`,
-                }))}
-                onSave={saveFile}
-                onCursor={(cursor) => {
-                  // Code → graph: the caret selects the resource it is in.
-                  const target = resourceAtLine(
-                    live.resources,
-                    file.path,
-                    editorContent,
-                    cursor,
-                  );
-                  if (target && target.id !== selected) {
-                    setSelected(target.id);
-                    focusOn(target.id);
+              {revisionConflict ? (
+                <ConflictDiff
+                  key={`${project.id}:${file.path}:${draft.baseRevision}`}
+                  file={file.path}
+                  base={draft.baseContent}
+                  mine={draft.content}
+                  disk={file.content}
+                  diskRevision={file.revision}
+                  onKeepMine={(text, basis) =>
+                    rebaseDraft(file.path, text, true, basis)
                   }
-                }}
-                onChange={(content) => {
-                  const next = withDraft(
-                    draftsRef.current,
-                    file.path,
-                    content,
-                    file,
-                    project.id,
-                  );
-                  draftsRef.current = next;
-                  setDrafts(next);
-                }}
-              />
+                  onUseDisk={() => discardDraft(file.path)}
+                  onApply={(text, basis) =>
+                    rebaseDraft(file.path, text, false, basis)
+                  }
+                />
+              ) : (
+                <CodeEditor
+                  key={`${project.id}:${file.path}`}
+                  path={`${project.id}/${file.path}`}
+                  readOnly={readOnlyFile}
+                  value={editorContent}
+                  line={line}
+                  revealKey={reveal}
+                  highlight={linked}
+                  diagnostics={live.diagnostics.map((d) => ({
+                    ...d,
+                    file: `${project.id}/${d.file}`,
+                  }))}
+                  onSave={saveFile}
+                  onCursor={(cursor) => {
+                    // Code → graph: the caret selects the resource it is in.
+                    const target = resourceAtLine(
+                      live.resources,
+                      file.path,
+                      editorContent,
+                      cursor,
+                    );
+                    if (target && target.id !== selected) {
+                      setSelected(target.id);
+                      focusOn(target.id);
+                    }
+                  }}
+                  onChange={(content) => {
+                    const next = withDraft(
+                      draftsRef.current,
+                      file.path,
+                      content,
+                      file,
+                      project.id,
+                    );
+                    draftsRef.current = next;
+                    setDrafts(next);
+                  }}
+                />
+              )}
             </Suspense>
           </div>
         </>
@@ -549,7 +673,10 @@ export default function App() {
           <button
             className="icon-button"
             aria-label="Ayuda"
-            onClick={() => setHelp(true)}
+            onClick={() => {
+              setCleared("");
+              setHelp(true);
+            }}
           >
             <CircleHelp size={19} />
           </button>
@@ -638,6 +765,51 @@ export default function App() {
           </button>
         </div>
       )}
+      {/* A draft that another open tab is editing is not offered here. */}
+      {recovery.offers
+        .filter((offer) => !otherTabs.has(offer.file))
+        .map(({ entries: [entry, ...older] }) => {
+          const saved = project.files.find((f) => f.path === entry.file);
+          const current = saved?.revision === entry.baseRevision;
+          // This tab already has its own draft of the file (typed before
+          // deciding): the stored one is kept apart until the user decides.
+          const mine = !!drafts[entry.file];
+          // Several closed tabs may have left one each: newest first.
+          const more = older.length
+            ? older.length === 1
+              ? " Hay otro más antiguo; se ofrece después."
+              : ` Hay ${older.length} más antiguos; se ofrecen después.`
+            : "";
+          return (
+            <div
+              className="global-message recovery-message"
+              role="status"
+              key={entry.key}
+            >
+              <History size={16} />
+              <span>
+                {mine
+                  ? `Hay otro borrador de ${entry.file} (${ago(entry.savedAt)}) sin restaurar. Tu borrador actual no lo reemplaza: descárgalo o descártalo cuando decidas.`
+                  : !saved
+                    ? `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo ya no está en el proyecto.`
+                    : current
+                      ? `Hay un borrador sin guardar de ${entry.file} (${ago(entry.savedAt)}).`
+                      : `Hay un borrador de ${entry.file} (${ago(entry.savedAt)}), pero el archivo cambió fuera de TerraDock desde entonces.`}
+                {more}
+              </span>
+              {saved && !mine ? (
+                <button onClick={() => restoreDraft(entry)}>
+                  {current ? "Restaurar borrador" : "Comparar con el disco"}
+                </button>
+              ) : (
+                <button onClick={() => download(entry.file, entry.content)}>
+                  Descargar {entry.file}
+                </button>
+              )}
+              <button onClick={() => recovery.discard(entry)}>Descartar</button>
+            </div>
+          );
+        })}
       <div
         className={`workspace ${sidebar ? "" : "sidebar-hidden"} ${resource && (view === "architecture" || view === "split") ? "with-inspector" : ""}`}
       >
@@ -795,7 +967,12 @@ export default function App() {
                 error={floci.error}
                 running={floci.running}
                 hasUnsaved={hasUnsaved}
-                resourceCount={project.resources.length}
+                jsonFiles={project.files
+                  .map((f) => f.path)
+                  .filter((path) => path.endsWith(".tf.json"))}
+                resourceCount={
+                  project.resources.filter((r) => r.block === "resource").length
+                }
                 onRun={(action, variables) => void floci.run(action, variables)}
                 onCancel={() => void floci.cancel()}
               />
@@ -1035,8 +1212,36 @@ export default function App() {
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus
-              pestañas. Los borradores quedan en cada pestaña hasta guardar o
-              cerrar.
+              pestañas. Los borradores sin guardar se conservan en este
+              navegador: al volver a abrir el proyecto puedes restaurarlos. Se
+              eliminan al volver a abrir TerraDock en esta dirección pasados 7
+              días. Cualquier otra aplicación servida en el mismo puerto
+              comparte ese almacenamiento.
+            </p>
+            <div className="help-actions">
+              <button
+                className="button-secondary"
+                onClick={() =>
+                  void recovery
+                    .clearStored()
+                    .then((count) =>
+                      setCleared(
+                        count === 0
+                          ? "No había borradores guardados de pestañas cerradas."
+                          : count === 1
+                            ? "Se borró 1 borrador guardado."
+                            : `Se borraron ${count} borradores guardados.`,
+                      ),
+                    )
+                }
+              >
+                Borrar borradores guardados en este navegador
+              </button>
+              {cleared && <span role="status">{cleared}</span>}
+            </div>
+            <p className="field-note">
+              Los borradores abiertos en esta pestaña se siguen guardando
+              mientras la tengas abierta.
             </p>
           </div>
         </Dialog>

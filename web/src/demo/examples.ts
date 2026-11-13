@@ -15,6 +15,10 @@ resource "aws_instance" "api" {
   subnet_id = aws_subnet.app.id
   tags = { Name = "payments-api" }
 }
+
+variable "ami_id" {
+  description = "AMI de las instancias"
+}
 `;
 
 export const examples = [

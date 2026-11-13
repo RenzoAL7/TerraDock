@@ -67,9 +67,24 @@ describe("draftOverrides", () => {
   it("ignores drafts from other projects or unknown files", () => {
     expect(
       draftOverrides(project, {
-        "main.tf": { projectId: "p", content: "a", baseRevision: "r" },
-        "x.tf": { projectId: "p", content: "b", baseRevision: "r" },
-        other: { projectId: "q", content: "c", baseRevision: "r" },
+        "main.tf": {
+          projectId: "p",
+          content: "a",
+          baseRevision: "r",
+          baseContent: "",
+        },
+        "x.tf": {
+          projectId: "p",
+          content: "b",
+          baseRevision: "r",
+          baseContent: "",
+        },
+        other: {
+          projectId: "q",
+          content: "c",
+          baseRevision: "r",
+          baseContent: "",
+        },
       }),
     ).toEqual({ "main.tf": "a" });
   });

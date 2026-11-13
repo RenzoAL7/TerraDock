@@ -292,7 +292,10 @@ test("cambia entre los ejemplos y muestra su propio conjunto de recursos", async
   await page.getByRole("button", { name: "Ejemplos", exact: true }).click();
   await page.getByRole("button", { name: /Red mínima AWS/ }).click();
   await expect(page.getByTestId("resource-aws_instance.web")).toBeVisible();
-  expect((await project(request)).resources).toHaveLength(3);
+  // Three resources plus the ami_id variable they reference.
+  const declared = (await project(request)).resources;
+  expect(declared.filter((r) => r.block === "resource")).toHaveLength(3);
+  expect(declared.map((r) => r.id)).toContain("var.ami_id");
   await expect(page.getByTestId("resource-aws_instance.app_a")).toHaveCount(0);
   await page.getByRole("button", { name: "Ejemplos", exact: true }).click();
   await page.getByRole("button", { name: /Aplicación web AWS/ }).click();
@@ -390,10 +393,119 @@ test("bloquea un guardado obsoleto y conserva el borrador y el archivo externo",
   expect(rejected.status()).toBe(409);
   expect(await rejected.json()).toMatchObject({ code: "revision_conflict" });
   expect(await readFile(file, "utf8")).toBe(external);
-  await expect(page.locator(".view-lines")).toContainText("t3.medium");
+  // The draft stays, now compared with the disk version.
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "t3.large",
+  );
   await expect(
     page.getByRole("button", { name: "Descartar borrador", exact: true }),
   ).toBeEnabled();
+});
+
+test("un conflicto se compara y «Conservar el mío» guarda sobre la revisión nueva sin pisar el cambio externo", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  // Another program changes a different block of the same file.
+  const external = localSource.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(file, external);
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.getByRole("alert")).toContainText(
+    "main.tf cambió fuera de TerraDock",
+  );
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
+  const onDisk = (await project(request)).files[0];
+  expect(onDisk.content).toBe(external);
+  const saved = page.waitForRequest(
+    (r) => r.url().endsWith("/api/files") && r.method() === "PUT",
+  );
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({
+    expectedRevision: onDisk.revision,
+  });
+  const merged = external.replace('"t3.micro"', '"t3.medium"');
+  await expect.poll(() => readFile(file, "utf8")).toBe(merged);
+  await expect(diff).toHaveCount(0);
+  await expect(page.getByTestId("sync-status")).toContainText(
+    "Sincronizado con el archivo",
+  );
+  await expect(page.locator(".view-lines")).toContainText("10.0.9.0/24");
+});
+
+test("si el borrador y el disco cambian la misma línea, se edita el resultado antes de guardarlo", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  const external = localSource.replace('"t3.micro"', '"t3.large"');
+  await writeFile(file, external);
+  const diff = page.getByTestId("conflict-diff");
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  // Nothing is written while both versions touch the same line.
+  await expect(diff.getByRole("alert")).toContainText("mismas líneas");
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "<<<<<<< tu borrador",
+  );
+  expect(await readFile(file, "utf8")).toBe(external);
+  await diff.getByRole("button", { name: "Usar el del disco" }).click();
+  await expect(diff).toHaveCount(0);
+  await expect(page.locator(".view-lines")).toContainText("t3.large");
+  expect(await readFile(file, "utf8")).toBe(external);
+});
+
+test("aplicar un resultado tras otro cambio en disco vuelve a comparar y no revierte ese cambio", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  const v2 = localSource.replace('"t3.micro"', '"t3.large"');
+  await writeFile(file, v2);
+  const diff = page.getByTestId("conflict-diff");
+  await diff.getByRole("button", { name: "Editar el resultado" }).click();
+  // The file changes again while the result is being resolved by hand.
+  const v3 = v2.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(file, v3);
+  await expect(diff.getByRole("alert")).toContainText("volvió a cambiar");
+  await diff.getByRole("button", { name: "Aplicar resultado" }).click();
+  // The result was prepared against v2, so the comparison comes back with v3.
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  expect(await readFile(file, "utf8")).toBe(v3);
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  await expect
+    .poll(() => readFile(file, "utf8"))
+    .toBe(v3.replace('"t3.large"', '"t3.medium"'));
+  await expect(diff).toHaveCount(0);
 });
 
 test("conserva lo escrito mientras llega la respuesta de un guardado anterior", async ({
@@ -451,6 +563,8 @@ test("conserva lo escrito mientras llega la respuesta de un guardado anterior", 
       (await project(request)).files.find((file) => file.path === "main.tf")!
         .content,
     ).toBe(firstContent);
+    // Our own save arrives over SSE first: it is not a conflict.
+    await expect(page.getByTestId("conflict-diff")).toHaveCount(0);
     await replaceEditorContent(page, secondContent);
     const delivered = page.waitForResponse(
       (response) =>
@@ -482,6 +596,67 @@ test("conserva lo escrito mientras llega la respuesta de un guardado anterior", 
   }
 });
 
+test("Cmd+S durante un autoguardado del mismo archivo guarda después, sin conflicto falso", async ({
+  page,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  const first = localSource.replace('"t3.micro"', '"t3.small"');
+  const second = localSource.replace('"t3.micro"', '"t3.large"');
+
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let firstSaved!: (revision: string) => void;
+  const savedRevision = new Promise<string>((resolve) => {
+    firstSaved = resolve;
+  });
+  const puts: { expected: string; status: number; at: number }[] = [];
+  await page.route("**/api/files", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const expected = route.request().postDataJSON().expectedRevision;
+    const response = await route.fetch();
+    const entry = { expected, status: response.status(), at: Date.now() };
+    puts.push(entry);
+    if (puts.length === 1) {
+      const body = (await response.json()) as Project;
+      firstSaved(body.files.find((f) => f.path === "main.tf")!.revision);
+      // The server already wrote it; only the browser waits for the answer.
+      await held;
+    }
+    await route.fulfill({ response });
+  });
+  try {
+    await replaceEditorContent(page, first);
+    const revision = await savedRevision;
+    // Type more and save by hand while the autosave answer is pending.
+    await replaceEditorContent(page, second);
+    await page
+      .getByRole("textbox", { name: /^Código Terraform (?:.*\/)?main\.tf$/ })
+      .press("ControlOrMeta+S");
+    await expect(page.getByText("Guardado pendiente")).toBeVisible();
+    const releasedAt = Date.now();
+    release();
+    await expect.poll(() => readFile(file, "utf8")).toBe(second);
+    expect(puts).toHaveLength(2);
+    // The queued save uses the revision this tab just wrote: no 409, and it
+    // runs at once instead of waiting for the next autosave.
+    expect(puts[1]).toMatchObject({ expected: revision, status: 200 });
+    expect(puts[1].at - releasedAt).toBeLessThan(450);
+    await expect(page.getByTestId("conflict-diff")).toHaveCount(0);
+    await expect(page.getByTestId("sync-status")).toContainText(
+      "Sincronizado con el archivo",
+    );
+  } finally {
+    release();
+    await page.unroute("**/api/files");
+  }
+});
+
 test("el autoguardado espera a que el HCL sea válido", async ({
   page,
   request,
@@ -504,6 +679,46 @@ test("el autoguardado espera a que el HCL sea válido", async ({
   expect((await project(request)).valid).toBe(true);
 });
 
+test("los valores sensibles no se muestran en la tarjeta ni en el inspector", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await openLocalFolder(
+    page,
+    {
+      "main.tf": `variable "db_password" {
+  default   = "s3cr3t-pass"
+  sensitive = true
+}
+
+variable "env" {
+  default = "dev"
+}
+
+output "password" {
+  value     = var.db_password
+  sensitive = true
+}
+`,
+    },
+    "var.db_password",
+  );
+  const secret = page.getByTestId("node-var.db_password");
+  await expect(secret).toContainText("(sensible)");
+  await expect(secret).not.toContainText("s3cr3t");
+  await expect(page.getByTestId("node-output.password")).toContainText(
+    "(sensible)",
+  );
+  // Without sensitive = true the value is shown as before.
+  await expect(page.getByTestId("node-var.env")).toContainText("dev");
+  await page.getByTestId("resource-var.db_password").click();
+  const inspector = page.getByRole("complementary", {
+    name: "Inspector de propiedades",
+  });
+  await expect(inspector).toContainText("(sensible)");
+  await expect(inspector).not.toContainText("s3cr3t");
+});
+
 test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   page,
 }) => {
@@ -516,6 +731,20 @@ test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   await expect(
     page.getByRole("button", { name: "Aplicar plan", exact: true }),
   ).toBeDisabled();
+  // The example has no .tf.json: nothing to warn about.
+  await expect(page.getByTestId("floci-json")).toHaveCount(0);
+});
+
+test("la pestaña Floci avisa de que omite los .tf.json", async ({ page }) => {
+  await page.goto("/");
+  await openLocalFolder(page, {
+    "main.tf": localSource,
+    "extra.tf.json": '{"variable": {"region": {"default": "us-east-1"}}}',
+  });
+  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await expect(page.getByTestId("floci-json")).toContainText(
+    "Floci omite el archivo extra.tf.json",
+  );
 });
 
 test("solo la pestaña Floci consulta /api/floci", async ({ page }) => {
@@ -561,6 +790,210 @@ test("descartar el borrador también descarta lo escrito en el inspector", async
   await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
     "t3.small",
   );
+});
+
+/** Drafts this browser profile keeps in IndexedDB, by file. */
+async function storedDrafts(page: Page): Promise<Record<string, string>> {
+  return page.evaluate(
+    () =>
+      new Promise<Record<string, string>>((resolve) => {
+        const open = indexedDB.open("terradock", 1);
+        open.onupgradeneeded = () =>
+          open.result.createObjectStore("drafts", { keyPath: "key" });
+        open.onerror = () => resolve({});
+        open.onsuccess = () => {
+          const request = open.result
+            .transaction("drafts", "readonly")
+            .objectStore("drafts")
+            .getAll();
+          request.onsuccess = () => {
+            open.result.close();
+            resolve(
+              Object.fromEntries(
+                (request.result as { file: string; content: string }[]).map(
+                  (entry) => [entry.file, entry.content],
+                ),
+              ),
+            );
+          };
+        };
+      }),
+  );
+}
+
+/** Every stored copy of one file (one per tab that left a draft), sorted. */
+async function storedCopies(page: Page, file: string): Promise<string[]> {
+  return page.evaluate(
+    (path) =>
+      new Promise<string[]>((resolve) => {
+        const open = indexedDB.open("terradock", 1);
+        open.onupgradeneeded = () =>
+          open.result.createObjectStore("drafts", { keyPath: "key" });
+        open.onerror = () => resolve([]);
+        open.onsuccess = () => {
+          const request = open.result
+            .transaction("drafts", "readonly")
+            .objectStore("drafts")
+            .getAll();
+          request.onsuccess = () => {
+            open.result.close();
+            resolve(
+              (request.result as { file: string; content: string }[])
+                .filter((entry) => entry.file === path)
+                .map((entry) => entry.content)
+                .sort(),
+            );
+          };
+        };
+      }),
+    file,
+  );
+}
+
+async function reloadKeepingDrafts(page: Page) {
+  // Unsaved drafts still ask before leaving; accept like a user who reloads.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.reload();
+}
+
+test("un borrador sobrevive a recargar la pestaña y se puede restaurar", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const typed = original.replace('"t3.small"', '"t3.recuperado"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(async () => (await storedDrafts(page))["main.tf"])
+    .toBe(typed);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  await offer.getByRole("button", { name: "Restaurar borrador" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator(".view-lines")).toContainText("t3.recuperado");
+  await page.getByRole("button", { name: "Arquitectura", exact: true }).click();
+  await expect(page.getByTestId("node-aws_instance.app_a")).toContainText(
+    "t3.recuperado",
+  );
+  expect(
+    (await project(request)).files.find((file) => file.path === "main.tf")!
+      .content,
+  ).toBe(original);
+  // Discarding the restored draft also forgets it in the browser profile.
+  await page.getByRole("button", { name: "Código", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Descartar borrador", exact: true })
+    .click();
+  await expect.poll(async () => await storedDrafts(page)).toEqual({});
+});
+
+test("escribir antes de decidir sobre un borrador recuperado no lo borra", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const left = original.replace('"t3.small"', '"t3.anterior"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, left);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([left]);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  // Typing in the same file before restoring keeps both copies.
+  const typed = original.replace('"t3.small"', '"t3.nuevo"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(() => storedCopies(page, "main.tf"))
+    .toEqual([left, typed].sort());
+  await expect(offer).toContainText("Tu borrador actual no lo reemplaza");
+  await expect(
+    offer.getByRole("button", { name: "Restaurar borrador" }),
+  ).toHaveCount(0);
+  await expect(
+    offer.getByRole("button", { name: "Descargar main.tf" }),
+  ).toBeVisible();
+  // Only an explicit decision removes the earlier one.
+  await offer.getByRole("button", { name: "Descartar", exact: true }).click();
+  await expect(offer).toHaveCount(0);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([typed]);
+  await expect(page.locator(".view-lines")).toContainText("t3.nuevo");
+});
+
+test("la ayuda borra los borradores guardados en este navegador", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const original = (await project(request)).files.find(
+    (file) => file.path === "main.tf",
+  )!.content;
+  const left = original.replace('"t3.small"', '"t3.olvidado"');
+  await openInstanceCode(page);
+  await replaceEditorContent(page, left);
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([left]);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("borrador sin guardar");
+  await page.getByRole("button", { name: "Ayuda" }).click();
+  const clear = page.getByRole("button", {
+    name: "Borrar borradores guardados en este navegador",
+  });
+  await clear.click();
+  await expect(page.getByText("Se borró 1 borrador guardado.")).toBeVisible();
+  await expect.poll(() => storedCopies(page, "main.tf")).toEqual([]);
+  await expect(offer).toHaveCount(0);
+  // Nothing left: it says so instead of pretending to delete something.
+  await clear.click();
+  await expect(
+    page.getByText("No había borradores guardados de pestañas cerradas."),
+  ).toBeVisible();
+});
+
+test("al recargar con el archivo cambiado por fuera se ofrece comparar", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const typed = localSource.replace('"t3.micro"', '"t3.medium"');
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(page, typed);
+  await expect
+    .poll(async () => (await storedDrafts(page))["main.tf"])
+    .toBe(typed);
+  const external = localSource.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(join(directory, "main.tf"), external);
+  await reloadKeepingDrafts(page);
+  const offer = page.getByRole("status").filter({ hasText: "main.tf" });
+  await expect(offer).toContainText("cambió fuera de TerraDock");
+  await expect(
+    offer.getByRole("button", { name: "Restaurar borrador" }),
+  ).toHaveCount(0);
+  await offer.getByRole("button", { name: "Comparar con el disco" }).click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: /cambió|conflicto/i })
+      .first(),
+  ).toBeVisible();
+  // The comparison is the first Monaco view after the reload: it must load
+  // from the local bundle and show both versions.
+  const diff = page.getByTestId("conflict-diff");
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  await expect(diff.locator(".editor.modified .view-lines")).toContainText(
+    "t3.medium",
+  );
+  expect(await readFile(join(directory, "main.tf"), "utf8")).toBe(external);
 });
 
 /** 300 resource blocks over several files: VPCs, subnets, groups, instances. */

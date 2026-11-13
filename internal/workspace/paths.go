@@ -18,6 +18,18 @@ const (
 	MaxProjectBytes = 20 << 20
 )
 
+// isConfigFile reports whether the workspace reads name: native .tf files,
+// and .tf.json files, which are listed so the app can warn that their content
+// is not interpreted.
+func isConfigFile(name string) bool {
+	return strings.HasSuffix(name, ".tf") || strings.HasSuffix(name, ".tf.json")
+}
+
+// beforeReplace lets tests act inside writeFile after the temporary file is
+// synced: at "synced" (before the last revision check) and at "checked" (after
+// it, right before the rename). It does nothing outside tests.
+var beforeReplace = func(stage string) {}
+
 // Error provides a stable machine-readable code at the HTTP boundary.
 type Error struct{ Code, Message string }
 
@@ -76,7 +88,7 @@ func readFiles(root, dir string) (map[string]string, error) {
 	files := make(map[string]string)
 	total := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tf") {
+		if entry.IsDir() || !isConfigFile(entry.Name()) {
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -163,6 +175,7 @@ func writeFile(root, dir, name, content, expectedRevision string) error {
 	if err = f.Close(); err != nil {
 		return problem("io_error", "No se puede cerrar el archivo temporal.")
 	}
+	beforeReplace("synced")
 	// Recheck just before replace to narrow (not eliminate) external-editor races.
 	latest, err := readFile(root, path)
 	if err != nil {
@@ -174,6 +187,7 @@ func writeFile(root, dir, name, content, expectedRevision string) error {
 	if _, err = safePath(root, dir); err != nil {
 		return err
 	}
+	beforeReplace("checked")
 	if err = os.Rename(f.Name(), path); err != nil {
 		return problem("io_error", "No se puede reemplazar el archivo.")
 	}
@@ -235,7 +249,7 @@ func listDirectories(root, candidate string) (DirectoryListing, error) {
 		}
 		hasTF := false
 		for _, sub := range subentries {
-			if !sub.IsDir() && sub.Type()&os.ModeSymlink == 0 && strings.HasSuffix(sub.Name(), ".tf") {
+			if !sub.IsDir() && sub.Type()&os.ModeSymlink == 0 && isConfigFile(sub.Name()) {
 				hasTF = true
 				break
 			}

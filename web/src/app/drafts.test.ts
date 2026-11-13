@@ -19,6 +19,7 @@ const other = {
 };
 const resource = {
   id: "aws_instance.web",
+  block: "resource",
   type: "aws_instance",
   file: "main.tf",
   properties: [property, other],
@@ -48,6 +49,7 @@ describe("in-flight edits", () => {
   const captured: Draft = {
     projectId: "p",
     baseRevision: "old",
+    baseContent: "",
     content: "saved",
   };
   it("keeps typing made during a save and advances only its known baseline", () => {
@@ -58,7 +60,11 @@ describe("in-flight edits", () => {
       captured,
       snapshot("new"),
     );
-    expect(result["main.tf"]).toEqual({ ...typed, baseRevision: "new" });
+    expect(result["main.tf"]).toEqual({
+      ...typed,
+      baseRevision: "new",
+      baseContent: "",
+    });
     expect(typed.baseRevision).toBe("old");
   });
   it("clears the exact saved draft without discarding another file", () => {
@@ -111,7 +117,12 @@ describe("withDraft", () => {
   const saved = { content: "disk", revision: "r1" };
   it("creates a draft based on the saved revision", () => {
     expect(withDraft({}, "main.tf", "typed", saved, "p")).toEqual({
-      "main.tf": { content: "typed", baseRevision: "r1", projectId: "p" },
+      "main.tf": {
+        content: "typed",
+        baseRevision: "r1",
+        baseContent: "disk",
+        projectId: "p",
+      },
     });
   });
   it("keeps the original baseline while typing and clears on match", () => {
@@ -124,6 +135,7 @@ describe("withDraft", () => {
       "p",
     );
     expect(second["main.tf"].baseRevision).toBe("r1");
+    expect(second["main.tf"].baseContent).toBe("disk");
     expect(withDraft(second, "main.tf", "disk", saved, "p")).toEqual({});
   });
 });

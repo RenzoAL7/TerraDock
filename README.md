@@ -37,7 +37,7 @@ Todas las versiones y sus sumas de verificación están en [Releases](https://gi
 
 1. **Descomprime el archivo.** Dentro está el programa `terradock` (`terradock.exe` en Windows).
 2. **Ábrelo desde la carpeta de tus proyectos.** En una terminal, entra en la carpeta que contiene tus archivos `.tf` y ejecútalo. TerraDock solo puede abrir esa carpeta y lo que contiene.
-3. **Usa el navegador.** Se abre solo en [http://127.0.0.1:7331](http://127.0.0.1:7331). Pulsa **Abrir carpeta**, elige un proyecto y edita en el código o en el diagrama.
+3. **Usa el navegador.** Se abre solo en [http://127.0.0.1:7331](http://127.0.0.1:7331). Si la carpeta tiene archivos `.tf`, TerraDock la abre directamente; si no, muestra un ejemplo y puedes pulsar **Abrir carpeta** para elegir un proyecto.
 4. **Para cerrarlo,** pulsa `Ctrl+C` en la terminal.
 
 En macOS y Linux, desde la terminal:
@@ -58,11 +58,14 @@ Cambia `darwin_arm64` por el nombre de tu sistema en la tabla.
 Opciones útiles:
 
 ```sh
-terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir (por defecto, la actual)
+terradock ./infra              # Abrir ese proyecto al arrancar (también: --open-path ./infra)
+terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir (por defecto, la del proyecto o la actual)
 terradock --port 8080          # Otro puerto (por defecto, 7331)
 terradock --open=false         # No abrir el navegador
 terradock --version
 ```
+
+Si el puerto ya está en uso (por ejemplo, porque TerraDock ya está abierto), el programa lo indica y sugiere otro con `--port`.
 
 ## ¿Qué necesito?
 
@@ -76,13 +79,13 @@ Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así 
 
 ## Qué puedes hacer
 
-- **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones.
+- **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones. Las variables, los locals, los outputs y los proveedores también aparecen, en sus propias columnas; los bloques con `count` o `for_each` llevan una marca.
 - **Editar en ambos sentidos, en tiempo real.**
   - Lo que escribes en el código actualiza el diagrama y el inspector. El análisis arranca 60 ms después de la última tecla; con 300 recursos, el p95 medido hasta que el diagrama muestra el cambio es de unos 95 ms.
   - Lo que cambias en el inspector se escribe en el código al momento.
   - Si editas el archivo con otro programa (VS Code, vim…), el cambio aparece al instante.
 - **Navegar.** Al seleccionar un nodo se marca su bloque en el código. Al mover el cursor por el código se selecciona su nodo.
-- **Guardar sin pensar.** El autoguardado escribe el archivo cuando el HCL es válido. Si otro programa cambió el archivo, se detiene y conserva tu borrador. Puedes desactivarlo y guardar con ⌘/Ctrl + S.
+- **Guardar sin pensar.** El autoguardado escribe el archivo cuando el HCL es válido. Si otro programa cambió el archivo, se detiene, conserva tu borrador y te muestra las dos versiones para conservar la tuya encima de la nueva, usar la del disco o editar el resultado. Los borradores sin guardar sobreviven a cerrar o recargar la pestaña; los de más de 7 días se eliminan al volver a abrir TerraDock, y puedes borrarlos antes desde Ayuda. Puedes desactivarlo y guardar con ⌘/Ctrl + S.
 - **Ver errores.** Los errores de sintaxis aparecen en el editor. Mientras el HCL es inválido, el diagrama mantiene la última versión válida.
 
 Funciona con proyectos grandes: con 300 recursos, un cambio llega al diagrama en menos de 200 ms ([mediciones](docs/performance.md)).

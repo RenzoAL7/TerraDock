@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Project, Property, Resource } from "../../lib/types";
 import { ResourceIcon } from "../architecture/ArchitectureCanvas";
+import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import { shortType } from "../architecture/graph";
 
 /** Text typed in a field; it is applied to the code draft as you type. */
@@ -198,20 +199,30 @@ export function Inspector({
                 {property.kind === "expression" ? (
                   <span className="expression-badge">ƒx expresión</span>
                 ) : (
-                  <LockKeyhole size={12} />
+                  <span className="readonly-badge">
+                    <LockKeyhole size={11} /> solo lectura
+                  </span>
                 )}
               </label>
-              <code className="property-expression" title={property.expression}>
-                {property.expression}
-              </code>
-              {property.kind === "expression" && (
-                <button
-                  className="text-link"
-                  onClick={() => onCode(resource.file, property.line)}
+              {hidesValue(resource, property) ? (
+                <code className="property-expression">{SENSITIVE_TEXT}</code>
+              ) : (
+                <code
+                  className="property-expression"
+                  title={property.expression}
                 >
-                  Editar en código <ArrowUpRight size={12} />
-                </button>
+                  {property.expression}
+                </code>
               )}
+              {property.readOnlyReason && (
+                <p className="read-only-reason">{property.readOnlyReason}</p>
+              )}
+              <button
+                className="text-link"
+                onClick={() => onCode(resource.file, property.line)}
+              >
+                Editar en código <ArrowUpRight size={12} />
+              </button>
             </div>
           ))}
         </section>

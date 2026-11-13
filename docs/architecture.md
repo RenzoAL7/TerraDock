@@ -32,6 +32,8 @@ flowchart LR
 
 El análisis considera los `.tf` del directorio seleccionado como un módulo raíz. Cada recurso conserva su dirección, tipo, nombre y ubicación de origen. Las relaciones se extraen de referencias presentes en las expresiones; sus etiquetas y direcciones deben poder justificarse desde el código.
 
+Además de los recursos, el modelo incluye fuentes de datos, módulos, variables, locals (una declaración por clave), outputs y proveedores. El campo `block` de cada declaración indica su clase, y su `id` usa la sintaxis con la que Terraform la referencia (`var.region`, `local.name`, `output.ip`, `provider.aws.west`), de modo que una referencia en el código resuelve directamente a su nodo. Cada propiedad que el inspector no edita lleva `readOnlyReason`, un motivo en español.
+
 El parser interpreta sintaxis HCL. No sustituye el motor de evaluación de Terraform ni los esquemas de los proveedores. Los bloques con `count` o `for_each` son declaraciones; no se expanden a un número inventado de instancias. Los valores dependientes de variables, funciones o proveedores se mantienen como expresiones.
 
 La edición desde el inspector se restringe a los literales reconocidos. Una operación debe apuntar al rango de la expresión original y verificar la revisión antes de escribir. El código no editado visualmente conserva su contenido. El [documento de limitaciones](limitations.md) delimita las garantías de esta demo y lo que falta para la edición fiable prevista en el roadmap.
@@ -41,6 +43,8 @@ La edición desde el inspector se restringe a los literales reconocidos. Una ope
 La interfaz permite explorar una demostración y abrir un proyecto local. El contexto activo debe ser visible. Las operaciones sobre un ejemplo temporal no deben hacerse pasar por una modificación de una carpeta del usuario.
 
 En modo local, `--root` delimita el espacio accesible. Abrir una carpeta selecciona el módulo que se analizará dentro de esa raíz. No se agrega recursivamente cualquier `.tf` encontrado: cada módulo mantiene su contexto.
+
+Al arrancar, `cmd/terradock` decide el primer proyecto: la carpeta indicada como argumento (o `--open-path`), que debe abrirse o el programa termina con un error; si no se indica, la raíz cuando contiene archivos `.tf`; y si no, el ejemplo en memoria. Sin `--root` explícito, la carpeta indicada también es la raíz permitida. Abrir un proyecto solo lee archivos; nunca ejecuta Terraform.
 
 ## Contrato de la API local
 
@@ -71,7 +75,11 @@ HTTP y SSE pueden llegar en un orden distinto al de las operaciones. El cliente 
 
 El servidor comparte un proyecto activo entre sus pestañas. Los borradores pertenecen a cada pestaña y conservan el proyecto y revisión desde los que comenzaron. Si una modificación deja HCL inválido, se muestran la nueva fuente y sus diagnósticos mientras el gráfico conserva la última configuración válida del proyecto. La observación de cambios externos usa eventos nativos del sistema de archivos (fsnotify) con un margen de 25 ms y una lectura periódica de respaldo cada 2 s (300 ms si no hay eventos nativos). No supone un plazo máximo de actualización garantizado.
 
-Los borradores se analizan sin escribir en disco: `POST /api/analyze` recibe el contenido de los archivos con cambios y devuelve recursos, relaciones y diagnósticos, y `POST /api/edit-draft` aplica un literal del inspector sobre el texto del borrador. Ambos usan el mismo parser y editor que el guardado. El autoguardado del cliente persiste el borrador con `PUT /api/files` cuando la vista previa confirma que el HCL es válido, con la misma comprobación de revisión que un guardado manual.
+Los borradores se analizan sin escribir en disco: `POST /api/analyze` recibe el contenido de los archivos con cambios y devuelve recursos, relaciones y diagnósticos, y `POST /api/edit-draft` aplica un literal del inspector sobre el texto del borrador. Ambos usan el mismo parser y editor que el guardado. El autoguardado del cliente persiste el borrador con `PUT /api/files` cuando la vista previa confirma que el HCL es válido, con la misma comprobación de revisión que un guardado manual. Los guardados de una pestaña se hacen de uno en uno; uno pedido mientras otro está en curso espera su turno.
+
+Cada recurso del análisis lleva `line` y `endLine`: el bloque completo o, en un local, solo su atributo. Para resaltar la declaración y elegir el nodo según el cursor, el editor mide los bloques con llaves sobre el texto actual (sigue siendo correcto con HCL inválido) y usa `endLine` solo en los locals, que comparten bloque.
+
+Cada pestaña copia sus borradores en IndexedDB bajo una clave propia (raíz, carpeta, archivo e identificador de pestaña), así que dos pestañas abiertas no se pisan. Las pestañas se avisan con `BroadcastChannel` de qué archivos tienen borradores, usando el mismo identificador; el canal se cierra en `pagehide` y se reabre si la página vuelve de la caché de navegación. Al abrir un proyecto, la pestaña espera unos 100 ms a que respondan las demás antes de ofrecer borradores; las entradas de una pestaña que haya respondido durante la vida de la página no se ofrecen, no se borran y no caducan, y «Borrar borradores guardados» tampoco toca las de pestañas abiertas.
 
 El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de trabajo, ubicada en la caché del usuario, que contiene los archivos guardados, los `tfvars` del proyecto y los archivos de override del provider `aws` y del backend `local`. El entorno del proceso no incluye las variables `AWS_*` del usuario ni sus `TF_*`, salvo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*` (mirrors y registros privados), y fija `CHECKPOINT_DISABLE=1`. `floci start` y `terraform version` reciben el entorno saneado sin ninguna `TF_*`. «Aplicar» solo ejecuta el archivo de plan generado para la misma huella de archivos.
 
