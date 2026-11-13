@@ -53,7 +53,7 @@ Cuando un archivo cambia en disco mientras tiene un borrador, el editor muestra 
 
 - **Conservar el mío** aplica tus cambios sobre la versión nueva del disco (fusión de tres vías por líneas) y la guarda con la revisión nueva. Solo ocurre si tus cambios y los externos no tocan las mismas líneas ni líneas contiguas; si las tocan, no se escribe nada y se abre el resultado con marcas `<<<<<<<`, `=======` y `>>>>>>>` para resolverlo a mano.
 - **Usar el del disco** descarta el borrador.
-- **Editar el resultado** permite corregir el texto final; al aplicarlo queda como borrador sobre la revisión nueva y sigue el flujo normal de guardado.
+- **Editar el resultado** permite corregir el texto final; al aplicarlo queda como borrador sobre la versión del disco con la que se preparó y sigue el flujo normal de guardado. Si el archivo vuelve a cambiar mientras lo editas, se avisa y, al aplicar, la comparación aparece de nuevo con la versión más reciente: el cambio externo no se deshace en silencio.
 
 La fusión compara líneas de texto, no la estructura HCL: dos cambios en líneas distintas de un mismo bloque se combinan aunque juntos no tengan sentido para Terraform. Con diferencias muy extensas (más de 2.000 líneas distintas) no se intenta combinar y se pide resolver a mano.
 

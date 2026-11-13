@@ -476,6 +476,38 @@ test("si el borrador y el disco cambian la misma línea, se edita el resultado a
   expect(await readFile(file, "utf8")).toBe(external);
 });
 
+test("aplicar un resultado tras otro cambio en disco vuelve a comparar y no revierte ese cambio", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  await replaceEditorContent(
+    page,
+    localSource.replace('"t3.micro"', '"t3.medium"'),
+  );
+  const v2 = localSource.replace('"t3.micro"', '"t3.large"');
+  await writeFile(file, v2);
+  const diff = page.getByTestId("conflict-diff");
+  await diff.getByRole("button", { name: "Editar el resultado" }).click();
+  // The file changes again while the result is being resolved by hand.
+  const v3 = v2.replace("10.0.1.0/24", "10.0.9.0/24");
+  await writeFile(file, v3);
+  await expect(diff.getByRole("alert")).toContainText("volvió a cambiar");
+  await diff.getByRole("button", { name: "Aplicar resultado" }).click();
+  // The result was prepared against v2, so the comparison comes back with v3.
+  await expect(diff.locator(".editor.original .view-lines")).toContainText(
+    "10.0.9.0/24",
+  );
+  expect(await readFile(file, "utf8")).toBe(v3);
+  await diff.getByRole("button", { name: "Conservar el mío" }).click();
+  await expect
+    .poll(() => readFile(file, "utf8"))
+    .toBe(v3.replace('"t3.large"', '"t3.medium"'));
+  await expect(diff).toHaveCount(0);
+});
+
 test("conserva lo escrito mientras llega la respuesta de un guardado anterior", async ({
   page,
   request,

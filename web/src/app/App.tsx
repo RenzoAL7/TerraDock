@@ -50,6 +50,7 @@ import {
   type PropertyDraft,
 } from "../features/inspector/Inspector";
 import { FolderPicker } from "../features/project/FolderPicker";
+import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
 import { api, errorMessage, liveApi } from "../lib/api";
 import type { Draft, Project, Property, Resource } from "../lib/types";
@@ -411,18 +412,26 @@ export default function App() {
       ),
     );
   };
-  /** Put a draft on top of the file now on disk, and optionally save it. */
-  const rebaseDraft = (path: string, content: string, save: boolean) => {
-    const saved = project.files.find((f) => f.path === path);
-    if (!saved) return;
+  /**
+   * Put a draft on top of the disk version it was resolved against, and
+   * optionally save it. If the file changed again since (`basis` is older
+   * than the file), the draft stays in conflict with the newer version.
+   */
+  const rebaseDraft = (
+    path: string,
+    content: string,
+    save: boolean,
+    basis: DiskBasis,
+  ) => {
+    if (!project.files.some((f) => f.path === path)) return;
     const next = { ...draftsRef.current };
-    if (content === saved.content) delete next[path];
+    if (content === basis.content) delete next[path];
     else
       next[path] = {
         projectId: project.id,
         content,
-        baseRevision: saved.revision,
-        baseContent: saved.content,
+        baseRevision: basis.revision,
+        baseContent: basis.content,
       };
     draftsRef.current = next;
     urgentPreview.current = true;
@@ -545,9 +554,14 @@ export default function App() {
                   base={draft.baseContent}
                   mine={draft.content}
                   disk={file.content}
-                  onKeepMine={(text) => rebaseDraft(file.path, text, true)}
+                  diskRevision={file.revision}
+                  onKeepMine={(text, basis) =>
+                    rebaseDraft(file.path, text, true, basis)
+                  }
                   onUseDisk={() => discardDraft(file.path)}
-                  onApply={(text) => rebaseDraft(file.path, text, false)}
+                  onApply={(text, basis) =>
+                    rebaseDraft(file.path, text, false, basis)
+                  }
                 />
               ) : (
                 <CodeEditor
