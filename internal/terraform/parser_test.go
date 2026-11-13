@@ -253,6 +253,12 @@ resource "aws_vpc" "main" {
 	if name.Block != "local" || name.Line != 3 || len(name.Properties) != 1 || name.Properties[0].Expression != `"${local.prefix}-${var.env}"` {
 		t.Fatalf("local value must keep its own expression and line: %#v", name)
 	}
+	// Each local ends with its own attribute, never at the next block.
+	for id, lines := range map[string][2]int{"local.prefix": {2, 2}, "local.name": {3, 3}, "local.cidr": {6, 6}, "var.env": {8, 8}, "aws_vpc.main": {9, 12}} {
+		if r := resourceByID(t, a, id); r.Line != lines[0] || r.EndLine != lines[1] {
+			t.Fatalf("%s spans %d-%d, want %d-%d", id, r.Line, r.EndLine, lines[0], lines[1])
+		}
+	}
 	if p := resourceByID(t, a, "local.prefix").Properties[0]; p.Value != "app" || p.Editable || p.ReadOnlyReason == "" {
 		t.Fatalf("literal local is shown read-only with a reason: %#v", p)
 	}
@@ -264,6 +270,14 @@ resource "aws_vpc" "main" {
 	// A local feeding vpc_id never becomes a layout container.
 	if resourceByID(t, a, "aws_vpc.main").ParentID != "" {
 		t.Fatal("a VPC cannot be nested")
+	}
+}
+
+func TestMultilineLocalEndsWithItsValue(t *testing.T) {
+	a := Parse(map[string]string{"main.tf": "locals {\n  tags = {\n    Name = \"app\"\n  }\n  env = \"dev\"\n}\n"})
+	tags, env := resourceByID(t, a, "local.tags"), resourceByID(t, a, "local.env")
+	if tags.Line != 2 || tags.EndLine != 4 || env.Line != 5 || env.EndLine != 5 {
+		t.Fatalf("multi-line local spans its value only: %#v %#v", tags, env)
 	}
 }
 

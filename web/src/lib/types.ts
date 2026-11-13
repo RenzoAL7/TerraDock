@@ -36,6 +36,8 @@ export interface Resource {
   name: string;
   file: string;
   line: number;
+  /** Last line of the block (or of the attribute, for a local value). */
+  endLine?: number;
   category: Category;
   label: string;
   properties: Property[];

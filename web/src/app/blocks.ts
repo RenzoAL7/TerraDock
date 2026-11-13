@@ -46,6 +46,15 @@ export function blockEnd(content: string, startLine: number): number {
   return startLine;
 }
 
+/**
+ * Last line of a declaration: the range the parser sent, or the brace match
+ * when it did not send one. Locals need the parser range, since several of
+ * them share one block and each ends with its own value.
+ */
+export function declarationEnd(resource: Resource, content: string): number {
+  return resource.endLine ?? blockEnd(content, resource.line);
+}
+
 /** The resource whose block (in `file`) contains `line`, if any. */
 export function resourceAtLine(
   resources: Resource[],
@@ -56,5 +65,5 @@ export function resourceAtLine(
   return resources
     .filter((r) => r.file === file && r.line <= line)
     .sort((a, b) => b.line - a.line)
-    .find((r) => blockEnd(content, r.line) >= line);
+    .find((r) => declarationEnd(r, content) >= line);
 }

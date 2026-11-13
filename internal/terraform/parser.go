@@ -205,7 +205,7 @@ func declarationsOf(block *hclsyntax.Block, source []byte, file string, a *Analy
 			out = append(out, declaration{
 				resource: Resource{
 					ID: "local." + attr.Name, Block: "local", Type: "local", Name: attr.Name, File: file,
-					Line: attr.NameRange.Start.Line, Category: "local", Label: attr.Name,
+					Line: attr.NameRange.Start.Line, EndLine: attr.SrcRange.End.Line, Category: "local", Label: attr.Name,
 					Properties: []Property{propertyOf(source, "local", "value", attr)}, DependsOn: []string{},
 				},
 				block: block, source: source, attr: attr,
@@ -224,7 +224,7 @@ func declarationsOf(block *hclsyntax.Block, source []byte, file string, a *Analy
 	}
 	resource := Resource{
 		ID: id, Block: kind, Type: resourceType, Name: resourceName, File: file,
-		Line: line, Category: blockCategory(kind, resourceType),
+		Line: line, EndLine: block.Range().End.Line, Category: blockCategory(kind, resourceType),
 		Label: resourceLabel(block, resourceName), Properties: []Property{}, DependsOn: []string{},
 	}
 	for _, attr := range orderedAttributes(block.Body) {

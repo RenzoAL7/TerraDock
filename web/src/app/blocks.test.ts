@@ -40,3 +40,40 @@ describe("resourceAtLine", () => {
     expect(resourceAtLine(resources, "other.tf", source, 3)).toBeUndefined();
   });
 });
+
+describe("resourceAtLine with parser ranges", () => {
+  // Same source as TestLocalsGiveOneNodePerKey; ranges as the parser sends them.
+  const locals = `locals {
+  prefix = "app"
+  name   = "\${local.prefix}-\${var.env}"
+}
+locals {
+  cidr = "10.0.0.0/16"
+}
+variable "env" {}
+resource "aws_vpc" "main" {
+  cidr_block = local.cidr
+  tags       = { Name = local.name }
+}
+`;
+  const at = (id: string, line: number, endLine: number) =>
+    ({ id, file: "main.tf", line, endLine }) as Resource;
+  const parsed = [
+    at("local.prefix", 2, 2),
+    at("local.name", 3, 3),
+    at("local.cidr", 6, 6),
+    at("var.env", 8, 8),
+    at("aws_vpc.main", 9, 12),
+  ];
+  it("selects each local only on its own lines", () => {
+    expect(resourceAtLine(parsed, "main.tf", locals, 3)?.id).toBe("local.name");
+    expect(resourceAtLine(parsed, "main.tf", locals, 6)?.id).toBe("local.cidr");
+    expect(resourceAtLine(parsed, "main.tf", locals, 11)?.id).toBe(
+      "aws_vpc.main",
+    );
+  });
+  it("does not select another local from the second locals block", () => {
+    expect(resourceAtLine(parsed, "main.tf", locals, 5)).toBeUndefined();
+    expect(resourceAtLine(parsed, "main.tf", locals, 7)).toBeUndefined();
+  });
+});

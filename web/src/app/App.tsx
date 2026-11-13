@@ -36,7 +36,7 @@ import { afterFileSave, settledProperties, withDraft } from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
 import type { StoredDraft } from "./draftStore";
-import { blockEnd, resourceAtLine } from "./blocks";
+import { declarationEnd, resourceAtLine } from "./blocks";
 import { DeployPanel } from "../features/deploy/DeployPanel";
 import { deployMarks, useFloci } from "../features/deploy/useFloci";
 import {
@@ -350,7 +350,7 @@ export default function App() {
   const readOnlyFile = !!file && file.path.endsWith(".tf.json");
   const linked =
     resource && file && resource.file === file.path
-      ? { start: resource.line, end: blockEnd(editorContent, resource.line) }
+      ? { start: resource.line, end: declarationEnd(resource, editorContent) }
       : null;
   const conflictCount = Object.entries(drafts).filter(([path, d]) => {
     const f = project.files.find((x) => x.path === path);

@@ -25,12 +25,15 @@ type Property struct {
 // resources it covers data sources, modules, variables, locals (one per key),
 // outputs and provider configurations; Block tells them apart.
 type Resource struct {
-	ID         string     `json:"id"`
-	Block      string     `json:"block"`
-	Type       string     `json:"type"`
-	Name       string     `json:"name"`
-	File       string     `json:"file"`
-	Line       int        `json:"line"`
+	ID    string `json:"id"`
+	Block string `json:"block"`
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	File  string `json:"file"`
+	Line  int    `json:"line"`
+	// EndLine is the last line of the declaration: the block, or the
+	// attribute for a local value, so the editor can tell neighbours apart.
+	EndLine    int        `json:"endLine"`
 	Category   string     `json:"category"`
 	Label      string     `json:"label"`
 	Properties []Property `json:"properties"`
