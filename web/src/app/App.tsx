@@ -171,8 +171,19 @@ export default function App() {
             captured.baseRevision,
           ),
         );
-        if (next)
-          setDrafts((latest) => afterFileSave(latest, path, captured, next));
+        if (next) {
+          // A save queued behind this one runs before React renders again:
+          // update the refs now so it reads the saved revision, not the
+          // previous one (which would skip it or report a false conflict).
+          draftsRef.current = afterFileSave(
+            draftsRef.current,
+            path,
+            captured,
+            next,
+          );
+          projectRef.current = next;
+          setDrafts(draftsRef.current);
+        }
       } finally {
         setSavingPath("");
       }

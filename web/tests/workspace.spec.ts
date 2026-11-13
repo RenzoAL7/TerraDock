@@ -596,6 +596,68 @@ test("conserva lo escrito mientras llega la respuesta de un guardado anterior", 
   }
 });
 
+test("Cmd+S durante un autoguardado del mismo archivo guarda después, sin conflicto falso", async ({
+  page,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  await openInstanceCode(page, "aws_instance.web");
+  const first = localSource.replace('"t3.micro"', '"t3.small"');
+  const second = localSource.replace('"t3.micro"', '"t3.large"');
+
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let firstSaved!: (revision: string) => void;
+  const savedRevision = new Promise<string>((resolve) => {
+    firstSaved = resolve;
+  });
+  const puts: { expected: string; status: number; at: number }[] = [];
+  let releasedAt = 0;
+  await page.route("**/api/files", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const expected = route.request().postDataJSON().expectedRevision;
+    const response = await route.fetch();
+    const entry = { expected, status: response.status(), at: Date.now() };
+    puts.push(entry);
+    if (puts.length === 1) {
+      const body = (await response.json()) as Project;
+      firstSaved(body.files.find((f) => f.path === "main.tf")!.revision);
+      // The server already wrote it; only the browser waits for the answer.
+      await held;
+    }
+    await route.fulfill({ response });
+  });
+  try {
+    await replaceEditorContent(page, first);
+    const revision = await savedRevision;
+    // Type more and save by hand while the autosave answer is pending.
+    await replaceEditorContent(page, second);
+    await page
+      .getByRole("textbox", { name: /^Código Terraform (?:.*\/)?main\.tf$/ })
+      .press("ControlOrMeta+S");
+    await expect(page.getByText("Guardado pendiente")).toBeVisible();
+    releasedAt = Date.now();
+    release();
+    await expect.poll(() => readFile(file, "utf8")).toBe(second);
+    expect(puts).toHaveLength(2);
+    // The queued save uses the revision this tab just wrote: no 409, and it
+    // runs at once instead of waiting for the next autosave.
+    expect(puts[1]).toMatchObject({ expected: revision, status: 200 });
+    expect(puts[1].at - releasedAt).toBeLessThan(450);
+    await expect(page.getByTestId("conflict-diff")).toHaveCount(0);
+    await expect(page.getByTestId("sync-status")).toContainText(
+      "Sincronizado con el archivo",
+    );
+  } finally {
+    release();
+    await page.unroute("**/api/files");
+  }
+});
+
 test("el autoguardado espera a que el HCL sea válido", async ({
   page,
   request,

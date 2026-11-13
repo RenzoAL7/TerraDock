@@ -53,4 +53,25 @@ describe("SaveQueue", () => {
     await settle();
     expect(saved).toEqual(["b new"]);
   });
+
+  it("does not leave an unhandled rejection when a queued save fails", async () => {
+    const unhandled: unknown[] = [];
+    const track = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", track);
+    try {
+      const queue = new SaveQueue();
+      const first = gate();
+      const running = queue.request("a.tf", () => first.opened);
+      await queue.request("b.tf", async () => {
+        throw new Error("sin conexión");
+      });
+      first.open();
+      await running;
+      await settle();
+      await settle();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", track);
+    }
+  });
 });

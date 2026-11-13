@@ -28,7 +28,9 @@ export class SaveQueue {
         const [nextPath, nextSave] = next.value;
         this.waiting.delete(nextPath);
         this.onWaiting([...this.waiting.keys()]);
-        void this.request(nextPath, nextSave);
+        // Its caller already returned; a failure (shown by the save itself)
+        // must not surface as an unhandled rejection.
+        this.request(nextPath, nextSave).catch(() => undefined);
       }
     }
   }
