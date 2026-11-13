@@ -75,7 +75,7 @@ Los borradores se analizan sin escribir en disco: `POST /api/analyze` recibe el 
 
 El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de trabajo, ubicada en la caché del usuario, que contiene los archivos guardados, los `tfvars` del proyecto y los archivos de override del provider `aws` y del backend `local`. El entorno del proceso no incluye las variables `AWS_*` ni `TF_*` del usuario y fija `CHECKPOINT_DISABLE=1`; `floci start` y `terraform version` reciben el mismo entorno saneado. «Aplicar» solo ejecuta el archivo de plan generado para la misma huella de archivos.
 
-El cliente solo pide `GET /api/floci` mientras la pestaña Floci está visible. Ese estado comprueba si el endpoint responde y, una vez por proceso y fuera del bloqueo del ejecutor, lee `terraform version -json`; no se reintenta si falla. Como el estado no se refresca fuera de la pestaña, el diagrama descarta las marcas de un plan leído para una revisión guardada anterior.
+El cliente solo pide `GET /api/floci` mientras la pestaña Floci está visible o hay una operación en curso, para que plan, aplicar y destruir sigan actualizando el diagrama aunque se salga de la pestaña. Ese estado comprueba si el endpoint responde y, una vez por proceso y fuera del bloqueo del ejecutor, lee `terraform version -json`; no se reintenta si falla. Como el estado no se refresca siempre, el diagrama no muestra marcas de un estado leído para otro proyecto y descarta las de un plan leído para una revisión guardada anterior.
 
 ## Desarrollo y build
 
@@ -93,7 +93,7 @@ El workflow [Binarios](../.github/workflows/release.yml) ejecuta `make package` 
 - La interfaz corre en el navegador para evitar un runtime de escritorio adicional.
 - Go comparte la responsabilidad del servidor y el análisis HCL para mantener las operaciones de archivos fuera del navegador.
 - El diseño visual y el código se sincronizan mediante un modelo común con origen verificable.
-- Terraform solo se ejecuta desde la pestaña Floci: una vez para leer su versión cuando se abre la pestaña, y al pulsar plan, aplicar, destruir o actualizar, siempre contra el emulador local. Abrir una carpeta, analizar o editar nunca lo ejecuta.
+- Terraform solo se ejecuta desde la pestaña Floci: una vez para leer su versión cuando se abre la pestaña, y al pulsar plan, aplicar, destruir o «Leer estado», siempre contra el emulador local. Abrir una carpeta, analizar o editar nunca lo ejecuta.
 - La importación de planes JSON arbitrarios y la ejecución contra cuentas AWS reales quedan fuera de esta entrega.
 - Se publica compatibilidad parcial antes de ampliar recursos o evaluación semántica.
 

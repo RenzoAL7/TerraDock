@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deployMarks } from "./useFloci";
+import { deployMarks, pollDelay } from "./useFloci";
 import type { FlociStatus } from "../../lib/types";
 
 const status = (stale = false): FlociStatus => ({
@@ -19,9 +19,11 @@ const status = (stale = false): FlociStatus => ({
   },
 });
 
+const current = { projectId: "p", revision: "r1" };
+
 describe("deployMarks", () => {
   it("shows the plan read for the current saved revision", () => {
-    expect(deployMarks(status(), "p", "r1", "r1")).toEqual({
+    expect(deployMarks(status(), current, current)).toEqual({
       "aws_vpc.main": "deployed",
       "aws_subnet.app": "create",
     });
@@ -30,18 +32,40 @@ describe("deployMarks", () => {
   it("drops a plan read before the saved files changed", () => {
     // The status is not polled outside the Floci tab, so the client must not
     // keep showing a plan for files that no longer exist.
-    expect(deployMarks(status(), "p", "r2", "r1")).toEqual({
-      "aws_vpc.main": "deployed",
-    });
+    expect(
+      deployMarks(status(), current, { projectId: "p", revision: "r0" }),
+    ).toEqual({ "aws_vpc.main": "deployed" });
+  });
+
+  it("marks nothing when the status was read for another project", () => {
+    // Applying in project A and then opening B outside the tab must not show
+    // A's resources as deployed in B.
+    expect(
+      deployMarks(status(), current, { projectId: "a", revision: "r1" }),
+    ).toEqual({});
+    expect(deployMarks(status(), current, {})).toEqual({});
   });
 
   it("drops stale plans and plans of other projects", () => {
-    expect(deployMarks(status(true), "p", "r1", "r1")).toEqual({
+    expect(deployMarks(status(true), current, current)).toEqual({
       "aws_vpc.main": "deployed",
     });
-    expect(deployMarks(status(), "other", "r1", "r1")).toEqual({
+    const other = { projectId: "other", revision: "r1" };
+    expect(deployMarks(status(), other, other)).toEqual({
       "aws_vpc.main": "deployed",
     });
-    expect(deployMarks(null, "p", "r1", "r1")).toEqual({});
+    expect(deployMarks(null, current, current)).toEqual({});
+  });
+});
+
+describe("pollDelay", () => {
+  it("polls only while the tab is visible or an operation runs", () => {
+    expect(pollDelay(false, false)).toBeNull();
+    expect(pollDelay(true, false)).toBe(4000);
+  });
+
+  it("keeps polling a running operation after leaving the tab", () => {
+    expect(pollDelay(false, true)).toBe(700);
+    expect(pollDelay(true, true)).toBe(700);
   });
 });

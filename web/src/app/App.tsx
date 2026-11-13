@@ -298,9 +298,8 @@ export default function App() {
   const issues = live.diagnostics.length + live.findings.length;
   const marks = deployMarks(
     floci.status,
-    project.id,
-    project.revision,
-    floci.statusRevision,
+    { projectId: project.id, revision: project.revision },
+    floci.read,
   );
   const editorContent = file ? (draft?.content ?? file.content) : "";
   const linked =
@@ -1027,11 +1026,12 @@ export default function App() {
               <code>for_each</code> no se evalúan.
             </p>
             <p>
-              Solo la pestaña Floci, mientras está abierta, consulta el emulador
-              local y la versión de Terraform. Plan, aplicar y destruir ejecutan
-              Terraform contra el emulador: <code>terraform init</code> descarga
-              providers la primera vez en cada proyecto, e Iniciar Floci puede
-              descargar su imagen Docker si falta.
+              Solo la pestaña Floci, mientras está abierta o hay una operación
+              en curso, consulta el emulador local y la versión de Terraform.
+              Plan, aplicar, destruir y Leer estado ejecutan Terraform contra el
+              emulador: <code>terraform init</code> descarga providers la
+              primera vez en cada proyecto, e Iniciar Floci puede descargar su
+              imagen Docker si falta.
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus
