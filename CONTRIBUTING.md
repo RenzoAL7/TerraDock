@@ -19,7 +19,7 @@ La protección de `main` se configura en GitHub; documentar esta política no ac
 
 ## Preparar el entorno
 
-Sigue el [inicio rápido](README.md#probar-la-demo) y la [guía de desarrollo](docs/development.md). Instala dependencias con `npm ci`; conserva `web/package-lock.json` y `go.sum` al modificar dependencias.
+Sigue la sección [Para desarrolladores](README.md#para-desarrolladores) y la [guía de desarrollo](docs/development.md). Instala dependencias con `npm ci`; conserva `web/package-lock.json` y `go.sum` al modificar dependencias.
 
 ## Validar un cambio
 

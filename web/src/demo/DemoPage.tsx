@@ -469,7 +469,7 @@ export function DemoPage() {
             Representa recursos declarados y referencias. No valida proveedores
             ni despliegues; las variables y los módulos no se evalúan.
           </p>
-          <a href="https://github.com/RenzoAL7/TerraDock#probar-la-demo">
+          <a href="https://github.com/RenzoAL7/TerraDock#empezar">
             Abrir tus archivos con la app local{" "}
             <ArrowRight size={14} aria-hidden="true" />
           </a>
