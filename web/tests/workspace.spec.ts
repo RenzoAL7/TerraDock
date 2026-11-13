@@ -616,7 +616,6 @@ test("Cmd+S durante un autoguardado del mismo archivo guarda después, sin confl
     firstSaved = resolve;
   });
   const puts: { expected: string; status: number; at: number }[] = [];
-  let releasedAt = 0;
   await page.route("**/api/files", async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
     const expected = route.request().postDataJSON().expectedRevision;
@@ -640,7 +639,7 @@ test("Cmd+S durante un autoguardado del mismo archivo guarda después, sin confl
       .getByRole("textbox", { name: /^Código Terraform (?:.*\/)?main\.tf$/ })
       .press("ControlOrMeta+S");
     await expect(page.getByText("Guardado pendiente")).toBeVisible();
-    releasedAt = Date.now();
+    const releasedAt = Date.now();
     release();
     await expect.poll(() => readFile(file, "utf8")).toBe(second);
     expect(puts).toHaveLength(2);
