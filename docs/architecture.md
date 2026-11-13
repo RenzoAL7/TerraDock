@@ -20,10 +20,11 @@ flowchart LR
 
 | Capa | Responsabilidad | Límite |
 | --- | --- | --- |
-| `cmd/terradock` | Opciones de arranque y servidor HTTP | No contiene lógica de interpretación |
+| `cmd/terradock` | Opciones de arranque, servidor HTTP y apertura del navegador (`--open`) | No contiene lógica de interpretación |
 | `internal/` | Modelo, interpretación, acceso al proyecto y API | El análisis y la edición no ejecutan Terraform ni consultan AWS |
 | `internal/floci` | `terraform plan`, `apply` y `destroy` contra el emulador Floci, solo a petición del usuario | Solo endpoints locales; trabaja sobre una copia privada y sin las variables `AWS_*` reales. `terraform init` puede descargar providers |
 | `web/src/` | Navegación, borradores, editor, canvas e inspector | El diagrama se deriva del modelo interpretado |
+| `web/embed.go` | Incrusta `web/dist` en el ejecutable con la etiqueta de build `embed` | Sin esa etiqueta (`web/noembed.go`), el frontend se lee de `--assets` |
 | `examples/` | Entradas didácticas para probar el flujo | No son un despliegue verificado |
 | `web/tests/` | Escenarios de usuario sobre servicios locales | No validan recursos en AWS |
 
@@ -78,7 +79,12 @@ El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de
 
 Durante el desarrollo, Vite sirve el frontend en `127.0.0.1:5173` y reenvía la API al proceso Go en `127.0.0.1:7331`. `make dev-api` permite el origen exacto de Vite mediante `--dev-origin`; esa excepción es opcional y no se necesita para el build. Durante la ejecución del build, Go sirve los archivos de `web/dist` y la API desde un mismo puerto. Monaco y sus workers se incluyen en la compilación del frontend.
 
-Hoy la distribución consiste en el ejecutable `bin/terradock` y el directorio `web/dist`, que se indica con `--assets`. El ejecutable todavía no embebe el frontend. Un único binario con el frontend embebido, la apertura automática del navegador, los binarios de release, los instaladores y las actualizaciones automáticas están previstos en la fase 9 del [roadmap](roadmap.md).
+Hay dos formas de ejecutable:
+
+- `make build` genera `bin/terradock`, que lee el frontend de `web/dist` (o de la ruta indicada con `--assets`). Es la forma que usan el desarrollo y las pruebas de navegador.
+- `make package` (`scripts/package.sh`) compila con `-tags embed` un binario autocontenido por plataforma (macOS, Linux y Windows; ARM64 y AMD64) con el frontend incrustado, y genera `checksums.txt`. Ese binario abre el navegador al arrancar (`--open`, activo por defecto cuando el frontend va incrustado). Si se pasa `--assets`, usa esa carpeta en lugar de la copia incrustada.
+
+El workflow [Binarios](../.github/workflows/release.yml) ejecuta `make package` en un runner ARM, prueba el binario linux/arm64 y crea el release en GitHub al publicar una etiqueta `v*`. Todavía no se ha publicado ninguna etiqueta, así que no hay un release descargable. Los instaladores, la firma de código y las actualizaciones automáticas son trabajo posterior.
 
 ## Decisiones deliberadas
 

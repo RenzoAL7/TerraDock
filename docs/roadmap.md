@@ -21,7 +21,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 | Área | Estado |
 | --- | --- |
 | Núcleo técnico (fase 1) | Completo: parser HCL, modelo vinculado a la fuente, edición de literales preservando bytes y detección de cambios externos. |
-| IDE local (fase 2) | Mayormente completo. Faltan proyectos recientes, apertura automática del navegador y la gestión de archivos (crear, renombrar, eliminar). |
+| IDE local (fase 2) | Mayormente completo. Faltan proyectos recientes y la gestión de archivos (crear, renombrar, eliminar). |
 | Edición bidireccional (fase 3) | Núcleo completo y **en tiempo real**: código → diagrama mientras se escribe, inspector → código al instante, archivo externo → diagrama con eventos nativos y autoguardado de HCL válido con control de revisión. Falta el historial, la comparación de conflictos y la recuperación tras una interrupción. |
 | Proyectos habituales (fase 4) | Pendiente. Solo se leen los `tfvars` del proyecto para Floci. |
 | Planes (fase 6) | Parcial por otra vía: el plan generado contra Floci se muestra sobre el diagrama. Todavía no se importa un JSON arbitrario. |
@@ -71,7 +71,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 
 **Funcionalidades**
 
-- [x] Un programa sirve frontend y API en el mismo puerto local. Todavía necesita el directorio `web/dist` (`--assets`); embeber el frontend y abrir el navegador automáticamente siguen pendientes (fase 9).
+- [x] Un programa sirve frontend y API en el mismo puerto local. Los binarios de release llevan el frontend incrustado (`web/embed.go`) y abren el navegador al arrancar (`--open`).
 - [x] Puerto configurable con `--port` (las pruebas de navegador usan el 7332) e instrucciones de inicio y cierre en el README.
 - [ ] Mensaje claro si el puerto está ocupado. Hoy se muestra el error del sistema operativo.
 - [ ] Botón Abrir carpeta, navegación de directorios, ruta manual y proyectos recientes.
@@ -212,7 +212,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [ ] Templates con variables de entrada, supuestos, instrucciones y versiones de proveedores compatibles.
 - [ ] Previsualización de archivos y creación en un directorio nuevo; conflictos de nombres gestionados.
 - [ ] Verificación sintáctica y validación Terraform en el proceso de publicación de templates; indicar requisitos pendientes y no afirmar despliegue probado sin evidencia.
-- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente y demo; falta la descarga de binarios.
+- [ ] Landing con descarga, documentación, código fuente y Try Demo. Publicada en https://terradock.renzoaguilar.dev con código fuente, demo y una sección de descarga que apunta al último release de GitHub. Falta publicar el primer release (etiqueta `v*`) para que esos enlaces tengan archivos.
 - [x] Demo con archivos de ejemplo en memoria, reinicio y las mismas restricciones de edición.
 - [x] Validar cómo compartir el núcleo de análisis y edición en la demo, por ejemplo mediante una prueba de WebAssembly. No crear un segundo parser con comportamiento diferente.
 - [x] Mantener la demo independiente de las carpetas del visitante y del servicio local.
@@ -225,9 +225,9 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 
 **Entrega y calidad**
 
-- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad.
+- [ ] Binarios versionados para los sistemas y arquitecturas oficialmente soportados, con verificación de integridad. Implementado: `make package` y el workflow Binarios generan los 6 archivos (macOS, Linux y Windows; ARM64 y AMD64) con `checksums.txt` al publicar una etiqueta `v*`. Falta publicar el primer release y verificarlo en cada sistema.
 - [ ] Instalación, actualización, reversión y desinstalación documentadas.
-- [ ] Arranque con una orden y apertura automática opcional del navegador; opción de abrir una ruta directamente. Hoy se arranca con `bin/terradock` (`--root`, `--port`, `--assets`); faltan la apertura del navegador y abrir una ruta al iniciar.
+- [ ] Arranque con una orden y apertura automática opcional del navegador; opción de abrir una ruta directamente. Hecho: arranque con una orden (`terradock`) y apertura del navegador desactivable con `--open=false`. Falta abrir un proyecto directamente al iniciar.
 - [ ] Funcionamiento básico sin Terraform, credenciales AWS ni conexión a Internet después de instalar.
 - [x] Frontend y recursos servidos localmente, sin dependencias externas necesarias para editar.
 - [x] Servidor limitado a loopback; sesión y comprobación de origen/host para operaciones sensibles.
@@ -281,7 +281,7 @@ La evaluación completa de IAM, estimación de costos, otros proveedores, colabo
 2. Cerrar la fase 3: comparación de versiones en conflicto, recuperación de borradores tras cerrar o reiniciar, y archivos creados, renombrados o eliminados externamente.
 3. Completar V8: detectar antes de aplicar los tipos y servicios que Floci no emula (por ejemplo `t3.large`) y comparar atributos con el estado desplegado.
 4. Fase 4: variables, locals, outputs y módulos locales visibles en el diagrama.
-5. Fase 9: binarios ARM64 y AMD64 para macOS, Linux y Windows (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64), con frontend embebido en un único ejecutable y apertura del navegador.
+5. Fase 9: publicar el primer release (etiqueta `v*`) de los binarios ARM64 y AMD64 para macOS, Linux y Windows, ya implementados con frontend incrustado y apertura del navegador (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64). Después, firma de código, actualización y desinstalación documentadas.
 
 No se asignan fechas antes de validar el núcleo técnico. Las estimaciones se harán con evidencia de esa prueba y la disponibilidad real de trabajo.
 

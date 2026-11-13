@@ -31,6 +31,8 @@ TerraDock es un único archivo, sin instalador ni dependencias. Elige el de tu s
 
 Todas las versiones y sus sumas de verificación están en [Releases](https://github.com/RenzoAL7/TerraDock/releases).
 
+> Los archivos aparecen cuando se publica un release (etiqueta `v*`). Si los enlaces todavía no descargan nada, aún no hay ninguno publicado: [compila desde el código](#para-desarrolladores).
+
 **Después de descargar:**
 
 1. **Descomprime el archivo.** Dentro está el programa `terradock` (`terradock.exe` en Windows).

@@ -58,7 +58,7 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
 - Integración Git, colaboración multiusuario y sincronización en la nube.
-- Binarios de release, instaladores y actualizaciones automáticas. Hoy se compila desde el código fuente y el ejecutable necesita `web/dist`. Los binarios para ARM64 y AMD64 en macOS, Linux y Windows, con el frontend embebido, están previstos en la fase 9 del [roadmap](roadmap.md).
+- Instaladores, firma de código y actualizaciones automáticas. Los binarios autocontenidos para ARM64 y AMD64 en macOS, Linux y Windows ya se construyen (`make package` y el workflow Binarios), pero no están firmados: macOS y Windows muestran un aviso la primera vez. El primer release se publica al crear una etiqueta `v*`; hasta entonces, los enlaces de descarga no tienen archivos y hay que compilar desde el código.
 - Certificación de funcionamiento en Windows y Linux de escritorio y pruebas con múltiples usuarios. La sincronización con 300 recursos sí está medida: el p95 queda por debajo de 1 s en una MacBook ARM con Chromium (ver [rendimiento](performance.md)), pero no en otras máquinas ni sistemas.
 
 ## Ejecución local
