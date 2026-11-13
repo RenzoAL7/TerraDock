@@ -1,4 +1,10 @@
-import type { Diagnostic, Finding, Resource, ResourceEdge } from "../lib/types";
+import type {
+  Diagnostic,
+  Finding,
+  NewResource,
+  Resource,
+  ResourceEdge,
+} from "../lib/types";
 
 export interface Analysis {
   resources: Resource[];
@@ -9,11 +15,12 @@ export interface Analysis {
 }
 
 export interface DemoRequest {
-  operation: "parse" | "edit";
+  operation: "parse" | "edit" | "create";
   content: string;
   resourceId?: string;
   property?: string;
   value?: string | number | boolean;
+  resource?: NewResource;
 }
 
 export interface DemoResponse {

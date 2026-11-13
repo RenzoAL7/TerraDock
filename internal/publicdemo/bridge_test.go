@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/RenzoAL7/TerraDock/internal/terraform"
 )
 
 const example = `# Preserve this comment.
@@ -30,6 +32,28 @@ func TestBrowserEditsUseRealParserAndPreserveSource(t *testing.T) {
 	}
 	if len(r.Analysis.Resources) != 3 || len(r.Analysis.Edges) != 2 || r.Analysis.Resources[2].ParentID != "aws_subnet.app" {
 		t.Fatal("source-derived graph lost its relationships")
+	}
+}
+
+func TestBrowserCreatesResourcesAtTheEndOfMainTF(t *testing.T) {
+	spec := terraform.NewResource{Type: "aws_s3_bucket", Name: "logs", Attributes: []terraform.NewAttribute{{Name: "bucket_prefix", Value: "logs-"}}}
+	r := Handle(Request{Operation: "create", Content: example, Resource: &spec})
+	if r.Error != "" || r.Analysis == nil || !r.Analysis.Valid {
+		t.Fatalf("create failed: %+v", r)
+	}
+	if !strings.HasPrefix(r.Content, example) || len(r.Analysis.Resources) != 4 {
+		t.Fatalf("existing source changed or resource missing: %q", r.Content)
+	}
+	for _, bad := range []Request{
+		{Operation: "create", Content: example},
+		{Operation: "create", Content: example, Resource: &terraform.NewResource{Type: "aws_vpc", Name: "main"}},
+		{Operation: "create", Content: example, Resource: &terraform.NewResource{Type: "aws_vpc", Name: "not valid"}},
+		{Operation: "create", Content: example + `resource "aws_vpc" {`, Resource: &spec},
+		{Operation: "create", Content: example + strings.Repeat("\n", 1000-strings.Count(example, "\n")), Resource: &spec},
+	} {
+		if got := Handle(bad); got.Error == "" || got.Content != "" {
+			t.Fatalf("invalid creation accepted: %+v", got)
+		}
 	}
 }
 

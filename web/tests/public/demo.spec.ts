@@ -130,6 +130,48 @@ test("invalid HCL preserves the last valid graph and computed expressions stay r
   await expect(editor).toHaveValue(original);
 });
 
+test("creating a resource appends it to main.tf, selects it and draws it in its scope", async ({
+  page,
+}) => {
+  await page.goto("/demo/");
+  await ready(page);
+  const editor = page.getByRole("textbox", {
+    name: "Código Terraform del ejemplo",
+  });
+  const original = await editor.inputValue();
+  await page
+    .getByRole("button", { name: "Seleccionar aws_vpc.main", exact: true })
+    .click();
+  await page.getByLabel("Crear", { exact: true }).selectOption("aws_subnet");
+  const name = page.getByLabel("Nombre del recurso nuevo");
+  await expect(name).toHaveAttribute("placeholder", "app_2");
+  await name.fill("app");
+  await expect(page.getByText("Ya existe aws_subnet.app.")).toBeVisible();
+  const create = page.getByRole("button", { name: "Crear recurso en main.tf" });
+  await expect(create).toBeDisabled();
+  await name.fill("db");
+  await create.click();
+  await expect(editor).toHaveValue(
+    original +
+      '\nresource "aws_subnet" "db" {\n  vpc_id     = aws_vpc.main.id\n  cidr_block = "10.0.1.0/24"\n}\n',
+  );
+  await ready(page);
+  await expect(
+    page.getByRole("button", {
+      name: "Seleccionar aws_subnet.db",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "db", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "aws_subnet.db añadido al final de main.tf y a la arquitectura.",
+    ),
+  ).toBeVisible();
+});
+
 test("references move resources between scopes and selection navigates to real source", async ({
   page,
 }) => {

@@ -8,14 +8,23 @@ import {
   FileCode2,
   Layers3,
   Network,
+  Plus,
   RotateCcw,
   SlidersHorizontal,
 } from "lucide-react";
-import type { Property, Resource } from "../lib/types";
+import type { NewResource, Property, Resource } from "../lib/types";
 import { hidesValue, SENSITIVE_TEXT } from "../lib/sensitive";
 import { createDemoEngine } from "./engine";
 import { examples } from "./examples";
 import { DemoGraph } from "./DemoGraph";
+import {
+  buildResource,
+  candidates,
+  referenceExpression,
+  suggestName,
+  templates,
+  validName,
+} from "../features/create/templates";
 import type { Analysis, DemoResponse } from "./types";
 import parserLicensesUrl from "./generated/parser-licenses.txt?url";
 import fontLicensesUrl from "../landing/font-licenses.txt?url";
@@ -151,6 +160,101 @@ function Inspector({
   );
 }
 
+/** Appends a resource from the same templates as the local app. */
+function CreateForm({
+  resources,
+  selected,
+  disabled,
+  onCreate,
+}: {
+  resources: Resource[];
+  selected: string;
+  disabled: boolean;
+  onCreate: (resource: NewResource) => void;
+}) {
+  const [type, setType] = useState(templates[0].type);
+  const [name, setName] = useState("");
+  const template = templates.find((t) => t.type === type) ?? templates[0];
+  const suggested = suggestName(template, resources);
+  const chosen = name || suggested;
+  const taken = resources.some(
+    (r) => r.block === "resource" && r.type === type && r.name === chosen,
+  );
+  const problem = !validName(chosen)
+    ? "Usa letras, dígitos, _ o -, empezando por una letra o _."
+    : taken
+      ? `Ya existe ${type}.${chosen}.`
+      : "";
+  return (
+    <form
+      className="demo-create"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (problem || disabled) return;
+        // Point references at the selected resource, or the first one.
+        const references: Record<string, string> = {};
+        for (const attr of template.attributes) {
+          if (!("reference" in attr)) continue;
+          const options = candidates(resources, attr.reference.type);
+          const target = options.find((r) => r.id === selected) ?? options[0];
+          if (target)
+            references[attr.name] = referenceExpression(
+              target,
+              attr.reference.attribute,
+            );
+        }
+        onCreate(buildResource(template, chosen, references));
+        setName("");
+      }}
+    >
+      <label htmlFor="demo-create-type">Crear</label>
+      <select
+        id="demo-create-type"
+        value={type}
+        disabled={disabled}
+        onChange={(event) => {
+          setType(event.target.value);
+          setName("");
+        }}
+      >
+        {templates.map((t) => (
+          <option key={t.type} value={t.type}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <label className="sr-only" htmlFor="demo-create-name">
+        Nombre del recurso nuevo
+      </label>
+      <input
+        id="demo-create-name"
+        value={name}
+        placeholder={suggested}
+        disabled={disabled}
+        maxLength={64}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={!!problem}
+        aria-describedby={problem ? "demo-create-problem" : undefined}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <button
+        type="submit"
+        disabled={disabled || !!problem}
+        aria-label="Crear recurso en main.tf"
+        title="Añadir al final de main.tf"
+      >
+        <Plus size={15} aria-hidden="true" />
+      </button>
+      {problem && (
+        <span id="demo-create-problem" className="demo-create-problem">
+          {problem}
+        </span>
+      )}
+    </form>
+  );
+}
+
 export function DemoPage() {
   const [code, setCode] = useState(examples[0].content);
   const codeRef = useRef(code);
@@ -255,6 +359,41 @@ export function DemoPage() {
           reason instanceof Error
             ? reason.message
             : "No se pudo aplicar el cambio.",
+        );
+    } finally {
+      if (mounted.current) setEditing(false);
+    }
+  }
+
+  async function createResource(spec: NewResource) {
+    if (!fresh || !engine.current) return;
+    const source = codeRef.current;
+    setEditing(true);
+    setNotice("");
+    try {
+      const result = await engine.current.request({
+        operation: "create",
+        content: source,
+        resource: spec,
+      });
+      if (!mounted.current || source !== codeRef.current) return;
+      codeRef.current = result.content;
+      setCode(result.content);
+      setEvaluation(result);
+      if (result.analysis?.valid) setLastValid(result.analysis);
+      const id = `${spec.type}.${spec.name}`;
+      setSelected(id);
+      setNotice(`${id} añadido al final de main.tf y a la arquitectura.`);
+      requestAnimationFrame(() => {
+        if (textarea.current)
+          textarea.current.scrollTop = textarea.current.scrollHeight;
+      });
+    } catch (reason) {
+      if (mounted.current)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "No se pudo crear el recurso.",
         );
     } finally {
       if (mounted.current) setEditing(false);
@@ -426,6 +565,14 @@ export function DemoPage() {
               <p className="demo-empty">
                 Cargando el analizador en tu navegador…
               </p>
+            )}
+            {lastValid && (
+              <CreateForm
+                resources={lastValid.resources}
+                selected={selected}
+                disabled={!fresh}
+                onCreate={(spec) => void createResource(spec)}
+              />
             )}
           </section>
           <Inspector

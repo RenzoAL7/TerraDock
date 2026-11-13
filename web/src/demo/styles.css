@@ -232,6 +232,54 @@
   background: #fff5e5;
   color: #83521d;
 }
+.demo-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  background: #fff;
+}
+.demo-create label {
+  font-weight: 650;
+}
+.demo-create select,
+.demo-create input {
+  min-width: 0;
+  min-height: 34px;
+  font-size: 11px;
+}
+.demo-create select {
+  flex: 1 1 130px;
+}
+.demo-create input {
+  flex: 1 1 100px;
+  font-family: var(--mono);
+}
+.demo-create button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 34px;
+  background: var(--ink);
+  color: #fff;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.demo-create button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.demo-create-problem {
+  flex-basis: 100%;
+  color: #83521d;
+  font-size: 10px;
+}
 .demo-graph-canvas {
   flex: 1;
   overflow: auto;
