@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, flociApi } from "../../lib/api";
-import type { DeployAction, FlociJob, FlociStatus } from "../../lib/types";
+import type {
+  DeployAction,
+  FlociJob,
+  FlociStatus,
+  Resource,
+} from "../../lib/types";
 
 export type DeployMark = DeployAction | "deployed";
 
@@ -18,11 +23,16 @@ export interface StatusRead {
  * another project or an older saved revision. Nothing is marked for another
  * project, and a plan read before the files changed is dropped instead of
  * waiting for the server to mark it stale.
+ *
+ * With `nodes`, only managed resources of the diagram keep a mark: variables,
+ * locals, outputs, providers, data sources and modules are never deployed
+ * themselves, even if an address happened to look like one of their IDs.
  */
 export function deployMarks(
   status: FlociStatus | null,
   current: StatusRead,
   read: StatusRead,
+  nodes?: readonly Pick<Resource, "id" | "block">[],
 ): Record<string, DeployMark> {
   const marks: Record<string, DeployMark> = {};
   if (!status || !current.projectId || read.projectId !== current.projectId)
@@ -35,6 +45,11 @@ export function deployMarks(
     read.revision === current.revision
   )
     Object.assign(marks, status.plan.changes);
+  if (!nodes) return marks;
+  const managed = new Set(
+    nodes.filter((n) => n.block === "resource").map((n) => n.id),
+  );
+  for (const id of Object.keys(marks)) if (!managed.has(id)) delete marks[id];
   return marks;
 }
 

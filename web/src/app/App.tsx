@@ -341,6 +341,7 @@ export default function App() {
     floci.status,
     { projectId: project.id, revision: project.revision },
     floci.read,
+    live.resources,
   );
   const editorContent = file ? (draft?.content ?? file.content) : "";
   // Listed so their warning is visible; their content is not interpreted.
