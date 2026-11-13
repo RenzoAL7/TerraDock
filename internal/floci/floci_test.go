@@ -1,10 +1,14 @@
 package floci
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/RenzoAL7/TerraDock/internal/floci/flocitest"
 )
 
 func TestValidateEndpointOnlyAllowsLocalTargets(t *testing.T) {
@@ -208,4 +212,98 @@ func TestStartRejectsUndeclaredVariables(t *testing.T) {
 	if _, err := r.Start("plan", "p1", map[string]string{"b": "x"}); err == nil {
 		t.Fatal("undeclared variable must be rejected")
 	}
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func setRealAWSEnvironment(t *testing.T) {
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "real-secret")
+	t.Setenv("AWS_PROFILE", "production")
+	t.Setenv("TF_LOG", "TRACE")
+}
+
+func TestStatusReadsTerraformVersionOnceOutsideTheLock(t *testing.T) {
+	setRealAWSEnvironment(t)
+	dir := t.TempDir()
+	log, gate := filepath.Join(dir, "terraform.log"), filepath.Join(dir, "release")
+	terraform := flocitest.FakeTool(t, "terraform", log, gate, `{"terraform_version":"1.9.8"}`, 0)
+	r, err := New(Config{StateDir: t.TempDir(), Terraform: terraform, Endpoint: "http://127.0.0.1:1"}, func() Project { return Project{ID: "p1"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan Status, 1)
+	go func() { done <- r.Status(context.Background()) }()
+	waitFor(t, "terraform version", func() bool { return strings.Contains(flocitest.ReadLog(log), "args: version -json") })
+
+	// While terraform runs, the runner lock must stay free.
+	released := make(chan bool, 1)
+	go func() { released <- r.Cancel() }()
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("Status holds the runner lock while terraform runs")
+	}
+	if err := os.WriteFile(gate, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if status := <-done; status.TerraformVersion != "1.9.8" {
+		t.Fatalf("version = %q", status.TerraformVersion)
+	}
+	if again := r.Status(context.Background()); again.TerraformVersion != "1.9.8" {
+		t.Fatalf("cached version = %q", again.TerraformVersion)
+	}
+	if calls := flocitest.Invocations(log); calls != 1 {
+		t.Fatalf("terraform ran %d times, want 1", calls)
+	}
+	flocitest.AssertSanitizedEnv(t, flocitest.ReadLog(log))
+}
+
+func TestStatusDoesNotRetryAFailingTerraformVersion(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "terraform.log")
+	terraform := flocitest.FakeTool(t, "terraform", log, "", "", 1)
+	r, err := New(Config{StateDir: t.TempDir(), Terraform: terraform, Endpoint: "http://127.0.0.1:1"}, func() Project { return Project{ID: "p1"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if status := r.Status(context.Background()); status.TerraformVersion != "" {
+			t.Fatalf("version = %q", status.TerraformVersion)
+		}
+	}
+	if calls := flocitest.Invocations(log); calls != 1 {
+		t.Fatalf("failing terraform ran %d times, want 1", calls)
+	}
+}
+
+func TestFlociStartRunsWithoutRealAWSEnvironment(t *testing.T) {
+	setRealAWSEnvironment(t)
+	log := filepath.Join(t.TempDir(), "floci.log")
+	flociCLI := flocitest.FakeTool(t, "floci", log, "", "started", 0)
+	r, err := New(Config{StateDir: t.TempDir(), Terraform: "/bin/true", Floci: flociCLI, Endpoint: "http://127.0.0.1:1"}, func() Project { return Project{ID: "p1"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Start("start", "p1", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "floci start", func() bool {
+		job := r.Status(context.Background()).Job
+		return job != nil && job.State != "running"
+	})
+	if job := r.Status(context.Background()).Job; job.State != "succeeded" {
+		t.Fatalf("job = %+v", job)
+	}
+	if !strings.Contains(flocitest.ReadLog(log), "args: start") {
+		t.Fatal("floci start was not invoked")
+	}
+	flocitest.AssertSanitizedEnv(t, flocitest.ReadLog(log))
 }
