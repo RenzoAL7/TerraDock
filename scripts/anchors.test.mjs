@@ -16,6 +16,11 @@ test("genera slugs como GitHub, con acentos y signos", () => {
     "desplegar-en-local-con-floci-opcional",
   );
   assert.equal(slug("Usar `--root` y [docs](x.md)"), "usar---root-y-docs");
+  // GitHub keeps underscores, for example in variable names.
+  assert.equal(
+    slug("Variables `TF_CLI_CONFIG_FILE`"),
+    "variables-tf_cli_config_file",
+  );
 });
 
 test("numera encabezados repetidos e ignora bloques de código", () => {

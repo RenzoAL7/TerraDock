@@ -5,14 +5,17 @@ import { dirname, join, normalize, relative } from "node:path";
 
 const repository = "https://github.com/RenzoAL7/TerraDock";
 
-/** GitHub-style slug: lowercase, punctuation removed, spaces to hyphens. */
+/**
+ * GitHub-style slug: lowercase, punctuation removed (letters, numbers, "-"
+ * and "_" survive), spaces to hyphens.
+ */
 export function slug(heading) {
   return heading
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // links and images → text
-    .replace(/[`*_~]/g, "") // inline code and emphasis markers
+    .replace(/[`*~]/g, "") // inline code and emphasis markers
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M} -]/gu, "")
+    .replace(/[^\p{L}\p{N}\p{M} _-]/gu, "")
     .replace(/ /g, "-");
 }
 
