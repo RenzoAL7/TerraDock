@@ -152,13 +152,14 @@ test.afterEach(async ({ request }) => {
 
 test("sirve arquitectura y Monaco desde los assets locales de producción", async ({
   page,
+  baseURL,
 }, testInfo) => {
   const remoteRequests: string[] = [];
   await page.route("**/*", async (route) => {
     const url = route.request().url();
     if (
       url.startsWith("http") &&
-      new URL(url).origin !== "http://127.0.0.1:7332"
+      new URL(url).origin !== new URL(baseURL!).origin
     ) {
       remoteRequests.push(url);
       await route.abort();

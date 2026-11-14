@@ -11,6 +11,12 @@ const binary = join(
   temporaryDirectory,
   process.platform === "win32" ? "terradock.exe" : "terradock",
 );
+// Same variable and default as web/ports.ts.
+const port = Number(process.env.TERRADOCK_E2E_PORT || 7332);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error("TERRADOCK_E2E_PORT debe ser un puerto entre 1 y 65535.");
+  process.exit(1);
+}
 let activeChild;
 let stopping = false;
 
@@ -27,6 +33,54 @@ function run(command, args) {
       if (activeChild === child) activeChild = undefined;
       if (stopping || code === 0) resolveRun();
       else reject(new Error(`${command} exited with ${signal ?? code}`));
+    });
+  });
+}
+
+// The server must answer on its port before the deadline and keep running
+// until Playwright stops it. Any other exit, including a clean one, fails the
+// suite instead of leaving it to talk to whatever owns the port.
+function serve(args) {
+  return new Promise((resolveServe, reject) => {
+    const child = spawn(binary, args, {
+      cwd: repository,
+      stdio: "inherit",
+      env: process.env,
+    });
+    activeChild = child;
+    let ready = false;
+    const deadline = Date.now() + 30_000;
+    const probe = async () => {
+      if (stopping || ready || child.exitCode !== null) return;
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/session`);
+        if (response.ok) {
+          ready = true;
+          return;
+        }
+      } catch {
+        /* not listening yet */
+      }
+      if (Date.now() > deadline) {
+        child.kill("SIGTERM");
+        reject(new Error(`terradock no respondió en 127.0.0.1:${port}`));
+        return;
+      }
+      setTimeout(probe, 200);
+    };
+    void probe();
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (activeChild === child) activeChild = undefined;
+      if (stopping) resolveServe();
+      else
+        reject(
+          new Error(
+            ready
+              ? `terradock terminó durante las pruebas (${signal ?? code})`
+              : `terradock no pudo enlazar 127.0.0.1:${port} (${signal ?? code})`,
+          ),
+        );
     });
   });
 }
@@ -65,13 +119,13 @@ try {
     ]);
   }
   if (!stopping) {
-    await run(binary, [
+    await serve([
       "--root",
       projectRoot,
       "--assets",
       join(repository, "web", "dist"),
       "--port",
-      "7332",
+      String(port),
     ]);
   }
 } catch (error) {

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { publicDevPort } from "../../ports";
 
 test("development entry resolves the public components and fonts", async ({
   page,
@@ -12,7 +13,7 @@ test("development entry resolves the public components and fonts", async ({
   page.on("response", (response) => {
     if (response.status() >= 400) errors.push(response.url());
   });
-  await page.goto("http://127.0.0.1:5174/");
+  await page.goto(`http://127.0.0.1:${publicDevPort}/`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "El código es tuyo.",
   );

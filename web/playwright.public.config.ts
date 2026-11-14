@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { publicDevPort, publicPreviewPort } from "./ports";
 
 const deployedURL = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
 
@@ -13,7 +14,7 @@ export default defineConfig({
   ],
   outputDir: "test-results/public",
   use: {
-    baseURL: deployedURL || "http://127.0.0.1:4174",
+    baseURL: deployedURL || `http://127.0.0.1:${publicPreviewPort}`,
     browserName: "chromium",
     viewport: { width: 1440, height: 1000 },
     trace: "retain-on-failure",
@@ -25,13 +26,13 @@ export default defineConfig({
     : [
         {
           command: "npm run build:public && npm run preview:public",
-          url: "http://127.0.0.1:4174",
+          url: `http://127.0.0.1:${publicPreviewPort}`,
           reuseExistingServer: false,
           timeout: 120_000,
         },
         {
           command: "npm run dev:public",
-          url: "http://127.0.0.1:5174",
+          url: `http://127.0.0.1:${publicDevPort}`,
           reuseExistingServer: false,
         },
       ],
