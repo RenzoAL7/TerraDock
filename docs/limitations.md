@@ -85,6 +85,14 @@ Si otra pestaña cambia el proyecto, los borradores conservan su identidad origi
 - **Deshacer** solo quita el bloque si el archivo sigue exactamente como quedó tras crearlo; si no, se quita en el código (⌘/Ctrl + Z en el editor también funciona mientras ese archivo está abierto).
 - No se conecta arrastrando de un nodo a otro: las referencias se eligen en el diálogo al crear, o se escriben en el código.
 
+### Exportar el diagrama
+
+- Se exporta lo mismo que se ve, en el estado en que está: posiciones, contenedores, referencias, el nodo seleccionado, los recursos atenuados por la búsqueda y las marcas de Floci (`+ crear`, `✓ en Floci`…) si la pestaña Floci las calculó. Los borradores sin guardar se exportan tal como los muestra el diagrama, y la banda superior lo indica.
+- Los valores `(sensible)` siguen ocultos: la tarjeta exportada usa el mismo texto que la del lienzo, y el valor real nunca entra en el archivo. Los nombres, los tipos, los CIDR y los demás literales visibles sí entran: revisa el archivo antes de compartirlo.
+- El SVG se genera desde el modelo del diagrama, no desde la pantalla: incluye los nodos que no están dibujados porque quedan fuera de la vista (con más de 150 recursos solo se dibuja lo visible). Lleva dentro Manrope e IBM Plex Mono (unos 75 KB) para verse igual en cualquier equipo. No incluye la miniatura, la leyenda ni los controles del lienzo.
+- El PNG se dibuja a 2× y se reduce si pasara de unos 16,7 millones de píxeles (o de 16 384 px por lado), para que el navegador pueda generarlo. Un diagrama muy grande sale con menos resolución; el SVG no tiene ese límite.
+- El ancho de los textos se aproxima: un nombre muy largo se recorta en el borde de la tarjeta igual que en el lienzo, pero el corte puede caer en otra letra.
+
 Las propiedades no compatibles se editan desde el código. Una propiedad que referencia una variable no debe reemplazarse silenciosamente por un literal desde el inspector.
 
 ## Fuera de esta entrega

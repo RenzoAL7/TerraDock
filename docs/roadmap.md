@@ -157,7 +157,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [ ] Guardar posiciones y preferencias separadas del código Terraform.
 - [ ] Mostrar dependencias directas y transitivas como relaciones potencialmente relevantes, sin afirmar cambios de despliegue.
 - [ ] Comparar con una instantánea de configuración elegida: bloques agregados, eliminados y modificados.
-- [ ] Exportar el gráfico a SVG o PNG con vista y alcance identificados.
+- [x] Exportar el gráfico a SVG o PNG con vista y alcance identificados. La banda del archivo nombra proyecto, fecha, número de recursos, filtro activo y borradores sin guardar; se genera desde el modelo, así que incluye los nodos fuera de pantalla.
 
 **Terminado cuando:** los ejemplos de red y aplicación web se entienden sin una maraña de conexiones; las relaciones tienen evidencia; los filtros no hacen pasar un gráfico parcial por completo.
 
