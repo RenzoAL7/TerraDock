@@ -25,9 +25,14 @@ Las posiciones resultantes son las mismas en los dos casos.
 Los dos primeros casos son los de la escritura normal: no buscan hueco o
 buscan uno solo, y la diferencia está dentro del ruido de medir menos de 1 ms.
 Los dos últimos ya no pasan por `stabilize` en el lienzo: una actualización
-que sustituye la mayor parte del diagrama se ordena de nuevo por capas
+que trae sobre todo nodos nuevos se ordena de nuevo por capas
 (`replacesDiagram`). La medición se hizo con una prueba temporal que no forma
 parte del repositorio.
+
+Con esos cambios (a213f10), la prueba e2e de latencia en Chromium, tres
+corridas sin otras pruebas de navegador en marcha, da: archivo externo 58 ms
+(58 · 56 · 61), inspector 239 ms (237 · 239 · 242) y código 152 ms
+(152 · 152 · 146), como en la medición anterior.
 
 ## Medición tras «exportar» y «ordenar» (2026-11-13, MacBook ARM, Chromium)
 
