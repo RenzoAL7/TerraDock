@@ -153,9 +153,22 @@ export function iconSymbol(name: string, Icon: LucideIcon): string {
   );
 }
 
-/** Escapes text and attribute values for XML: `< > & " '`. */
+/**
+ * Characters XML 1.0 forbids even as references: C0 controls other than
+ * tab, line feed and carriage return, and U+FFFE/U+FFFF. (Lone surrogates
+ * become U+FFFD when the Blob encodes the file as UTF-8.)
+ */
+// eslint-disable-next-line no-control-regex -- matching them is the point
+const NOT_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
+/**
+ * Escapes text and attribute values for XML: `< > & " '`. A character XML
+ * cannot hold (a control character pasted into a value) becomes U+FFFD, so
+ * the file still opens.
+ */
 export function escapeXml(text: string): string {
   return text
+    .replace(NOT_XML, "\uFFFD")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

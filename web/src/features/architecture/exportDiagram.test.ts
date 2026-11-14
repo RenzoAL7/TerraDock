@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Property, Resource, ResourceEdge } from "../../lib/types";
 import { buildGraph } from "./graph";
 import { diagramToSvg, type ExportCaption } from "./exportDiagram";
-import { iconFor, iconNodes } from "./diagramIcons";
+import { escapeXml, iconFor, iconNodes } from "./diagramIcons";
 import { MAX_PIXELS, pngScale } from "./rasterize";
 
 const blocks: Record<string, Resource["block"]> = {
@@ -160,6 +160,46 @@ describe("diagramToSvg", () => {
     expect(svg).toContain("&quot;proyecto&quot; &lt;b&gt;&amp;&lt;/b&gt;");
     // Every & starts an entity: the XML stays well formed.
     expect(svg).not.toMatch(/&(?!(amp|lt|gt|quot|apos);)/);
+  });
+
+  it("replaces characters XML cannot hold, so the file still opens", () => {
+    const value = "a\u0001b";
+    const graph = buildGraph(
+      [
+        resource("aws_s3_bucket.logs", undefined, {
+          label: value,
+          properties: [
+            {
+              name: "bucket_prefix",
+              expression: `"${value}"`,
+              value,
+              kind: "literal",
+              editable: true,
+              line: 2,
+            } as Property,
+          ],
+        }),
+      ],
+      [],
+      "",
+    );
+    const { svg } = diagramToSvg({
+      ...graph,
+      caption: { ...caption, project: value, filter: "\uFFFF" },
+    });
+    // XML 1.0 forbids C0 controls other than tab, LF and CR, and U+FFFE/F.
+    const forbidden = [...svg].filter((char) => {
+      const code = char.codePointAt(0)!;
+      return (
+        (code < 0x20 && ![0x09, 0x0a, 0x0d].includes(code)) ||
+        code === 0xfffe ||
+        code === 0xffff
+      );
+    });
+    expect(forbidden).toEqual([]);
+    expect(svg).toContain("a\uFFFDb");
+    // Tab, line feed and carriage return are valid XML and stay.
+    expect(escapeXml("a\tb\nc\rd")).toBe("a\tb\nc\rd");
   });
 
   it("frames all nodes plus a margin and the band in the viewBox", () => {

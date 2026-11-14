@@ -14,6 +14,8 @@ import {
   suggestName,
   templates,
 } from "../src/features/create/templates";
+import { buildGraph } from "../src/features/architecture/graph";
+import { diagramToSvg } from "../src/features/architecture/exportDiagram";
 
 const localSource = `# This comment must survive a visual edit.
 resource "aws_vpc" "main" {
@@ -1509,6 +1511,38 @@ test("con 300 recursos, el SVG incluye los nodos que no están en pantalla", asy
   const png = await exportFile(page, "PNG");
   expect(png.bytes.subarray(1, 4).toString("ascii")).toBe("PNG");
   expect(violations).toEqual([]);
+});
+
+test("un SVG con caracteres de control en los valores sigue siendo XML válido", async ({
+  page,
+}) => {
+  const value = "a\u0001b";
+  const graph = buildGraph(
+    [
+      {
+        id: "aws_s3_bucket.logs",
+        block: "resource",
+        type: "aws_s3_bucket",
+        name: "logs",
+        label: value,
+        file: "main.tf",
+        line: 1,
+        category: "storage",
+        properties: [],
+        dependsOn: [],
+      },
+    ],
+    [],
+    "",
+  );
+  const { svg } = diagramToSvg({
+    ...graph,
+    caption: { project: value, date: "14 nov 2026", resources: 1 },
+  });
+  const parsed = await parseSvg(page, svg);
+  expect(parsed.error).toBe("");
+  expect(parsed.root).toBe("svg");
+  expect(parsed.ids).toEqual(["aws_s3_bucket.logs"]);
 });
 
 /** Each rendered node's transform (its place in the diagram), by id. */
