@@ -26,7 +26,6 @@ import type { Resource, ResourceEdge } from "../../lib/types";
 import {
   buildGraph,
   cardDetail,
-  keepPositions,
   nodeSignature,
   repeatMark,
   scopeMeta,
@@ -37,6 +36,18 @@ import { iconFor, markStyle } from "./diagramIcons";
 import type { DeployMark } from "../deploy/useFloci";
 import { exportDiagram, type ExportFormat } from "./rasterize";
 import { download } from "../../lib/download";
+import { stabilize, type Remembered } from "./layout/stable";
+import { layeredLayout } from "./layout/layered";
+
+/**
+ * The places of the last project shown, kept while the diagram is unmounted
+ * (code and analysis views) so coming back does not move anything.
+ */
+let remembered: {
+  projectKey: string;
+  nodes: ResourceNode[];
+  removed: Remembered;
+} | null = null;
 
 function NodeMark({ mark }: { mark?: DeployMark }) {
   return mark ? (
@@ -151,16 +162,23 @@ interface Props {
   selected: string;
   query: string;
   onSelect: (id: string) => void;
+  /** Changes with the project or the view: refits the viewport, moves nothing. */
   resetKey: string;
   marks?: Record<string, DeployMark>;
   focus?: { id: string; n: number };
   /** Opens the "create resource" dialog (button and right click on the canvas). */
   onCreate?: () => void;
-  /** Identity of the project: a different one is laid out from scratch. */
+  /**
+   * Identity of the project (its id): a different one is laid out from
+   * scratch, the only time the layout runs by itself.
+   */
   project?: string;
-  /** A resource this client just created, placed beside the diagram. */
+  /**
+   * A resource this client just created. stabilize() places it like any new
+   * node, next to its first neighbor; the app then centers it.
+   */
   created?: string;
-  /** The created resource is on the canvas: stop placing it. */
+  /** The created resource is on the canvas. */
   onPlaced?: (id: string) => void;
   /** Named in the band of SVG/PNG exports. */
   projectName?: string;
@@ -177,13 +195,15 @@ function Graph({
   marks,
   focus,
   onCreate,
-  project = "",
+  project: projectKey = "",
   created = "",
   onPlaced,
   projectName = "Proyecto",
   unsavedFiles = 0,
 }: Props) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>(
+    remembered?.projectKey === projectKey ? remembered.nodes : [],
+  );
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const {
     fitView,
@@ -283,42 +303,35 @@ function Graph({
       })),
     [marks, updated],
   );
-  const layout = useCallback(() => {
-    const graph = buildGraph(resources, relations, selected, query);
-    setNodes(decorate(graph.nodes));
-    setEdges(graph.edges);
-  }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
-  // Live edits rebuild the graph on every keystroke. Reusing the previous node
-  // object when nothing visible changed lets React Flow skip re-rendering it,
-  // which keeps large diagrams responsive.
+  // Reusing the previous node object when nothing visible changed and it did
+  // not move lets React Flow skip re-rendering it, which keeps large diagrams
+  // responsive while typing.
   const nodeKeys = useRef(new Map<string, string>());
-  const laidOut = useRef(project);
-  useEffect(() => {
-    const graph = buildGraph(resources, relations, selected, query);
-    // Another project gets a full layout instead of the old positions.
-    const fresh = laidOut.current !== project;
-    laidOut.current = project;
-    setNodes((previous) => {
-      const next = decorate(graph.nodes);
-      const keys = new Map(next.map((node) => [node.id, nodeKey(node)]));
-      const merged = fresh
-        ? next
-        : keepPositions(
-            previous,
-            next,
-            (node) => nodeKeys.current.get(node.id) === keys.get(node.id),
-            created,
-          );
+  const reuse = useCallback(
+    (previous: ResourceNode[], placed: ResourceNode[]) => {
+      const byId = new Map(previous.map((n) => [n.id, n]));
+      const keys = new Map<string, string>();
+      const next = placed.map((node) => {
+        const key = nodeKey(node);
+        keys.set(node.id, key);
+        const old = byId.get(node.id);
+        return old &&
+          nodeKeys.current.get(node.id) === key &&
+          old.position.x === node.position.x &&
+          old.position.y === node.position.y
+          ? old
+          : node;
+      });
       nodeKeys.current = keys;
-      return merged;
-    });
-    setEdges((previous) =>
-      sameEdges(previous, graph.edges) ? previous : graph.edges,
-    );
-    // Placed once: later it keeps its position like any other node, and a
-    // block with the same name typed later is laid out normally.
-    if (created && graph.nodes.some((node) => node.id === created))
-      onPlaced?.(created);
+      return next;
+    },
+    [],
+  );
+  // "Ordenar": the full layered layout, on demand.
+  const layout = useCallback(() => {
+    const graph = buildGraph(resources, relations, selected, query, "layered");
+    setNodes((previous) => reuse(previous, decorate(graph.nodes)));
+    setEdges(graph.edges);
   }, [
     resources,
     relations,
@@ -327,10 +340,62 @@ function Graph({
     setNodes,
     setEdges,
     decorate,
-    project,
+    reuse,
+  ]);
+  // The full layout runs once per project. After that, every update (typing,
+  // the inspector, a file changed on disk, switching views) keeps the places
+  // and only fits new nodes in: stabilize() never lays everything out again.
+  const laidOut = useRef(
+    remembered?.projectKey === projectKey ? projectKey : "",
+  );
+  const forgotten = useRef<Remembered>(
+    remembered?.projectKey === projectKey ? remembered.removed : new Map(),
+  );
+  useEffect(() => {
+    const full = laidOut.current !== projectKey;
+    if (full) forgotten.current = new Map();
+    if (full && resources.length) laidOut.current = projectKey;
+    const graph = buildGraph(
+      resources,
+      relations,
+      selected,
+      query,
+      full ? "layered" : "grid",
+    );
+    setNodes((previous) => {
+      if (full) return reuse(previous, decorate(graph.nodes));
+      const ids = new Set(graph.nodes.map((n) => n.id));
+      // Nothing in common (all declarations replaced): lay out from scratch.
+      const placed = previous.some((n) => ids.has(n.id))
+        ? stabilize(previous, graph.nodes, graph.edges, forgotten.current)
+        : layeredLayout(graph.nodes, graph.edges);
+      return reuse(previous, decorate(placed));
+    });
+    setEdges((previous) =>
+      sameEdges(previous, graph.edges) ? previous : graph.edges,
+    );
+    // The created resource went next to its first neighbor like any new
+    // node; from now on it keeps its place like the rest.
+    if (created && graph.nodes.some((node) => node.id === created))
+      onPlaced?.(created);
+  }, [
+    resources,
+    relations,
+    selected,
+    query,
+    projectKey,
     created,
     onPlaced,
+    setNodes,
+    setEdges,
+    decorate,
+    reuse,
   ]);
+  // Leaving the diagram (the code view unmounts it) and coming back keeps
+  // the places of the same project.
+  useEffect(() => {
+    remembered = { projectKey, nodes, removed: forgotten.current };
+  }, [projectKey, nodes]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fitView({ padding: 0.1, duration: 250 });

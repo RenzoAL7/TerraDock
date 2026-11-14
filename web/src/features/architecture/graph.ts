@@ -1,6 +1,11 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { Resource, ResourceEdge } from "../../lib/types";
 import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
+import { laneOf, LEAF } from "./layout/geometry";
+import { gridLayout } from "./layout/grid";
+import { layeredLayout } from "./layout/layered";
+
+export { laneOf };
 
 export type ResourceNodeData = {
   resource: Resource;
@@ -12,17 +17,11 @@ export const isScope = (r: Resource) =>
   r.block === "resource" && ["aws_vpc", "aws_subnet"].includes(r.type);
 
 /**
- * Loose nodes are laid out in lanes, each starting a new column: resources,
- * data sources and modules first (as before), then providers, variables,
- * locals and outputs.
+ * How a full layout places the nodes. "grid" is the fixed grid; "layered"
+ * puts references top to bottom (dagre) inside each container. While typing
+ * neither runs: stabilize() keeps every place and fits the new nodes in.
  */
-const lanes: Partial<Record<Resource["block"], number>> = {
-  provider: 1,
-  variable: 2,
-  local: 3,
-  output: 4,
-};
-export const laneOf = (r: Resource) => lanes[r.block] ?? 0;
+export type LayoutKind = "grid" | "layered";
 
 /** Only explicit VPC/subnet references create containment. Other links remain edges. */
 export function buildGraph(
@@ -30,6 +29,7 @@ export function buildGraph(
   relationships: ResourceEdge[],
   selected: string,
   query = "",
+  layout: LayoutKind = "grid",
 ): { nodes: ResourceNode[]; edges: Edge[] } {
   const byId = new Map(resources.map((r) => [r.id, r]));
   const children = new Map<string, Resource[]>();
@@ -47,89 +47,40 @@ export function buildGraph(
   };
   resources.forEach((r) => {
     const p = parent(r);
-    if (p) children.set(p, [...(children.get(p) ?? []), r]);
+    if (p) {
+      const list = children.get(p);
+      if (list) list.push(r);
+      else children.set(p, [r]);
+    }
   });
-  const sizes = new Map<string, { width: number; height: number }>();
-  function measure(r: Resource): { width: number; height: number } {
-    if (!isScope(r)) return { width: 214, height: 96 };
-    const nested = children.get(r.id) ?? [];
-    const groups = nested.filter(isScope),
-      leaves = nested.filter((item) => !isScope(item));
-    const width = r.type === "aws_vpc" ? 626 : 280;
-    const groupHeight = groups.length
-      ? Math.max(...groups.map(measure).map((s) => s.height))
-      : 0;
-    const columns = r.type === "aws_vpc" ? 2 : 1;
-    const height =
-      72 +
-      Math.ceil(groups.length / 2) * (groupHeight + 24) +
-      Math.ceil(leaves.length / columns) * 116 +
-      16;
-    const size = {
-      width,
-      height: Math.max(r.type === "aws_vpc" ? 220 : 166, height),
-    };
-    sizes.set(r.id, size);
-    return size;
-  }
+  // Parents before children (React Flow needs it): each container, then its
+  // subnets, then its resources; top-level containers first, then the loose
+  // nodes lane by lane.
   const nodes: ResourceNode[] = [];
-  function place(r: Resource, x: number, y: number, parentId?: string) {
+  const lowerQuery = query.toLowerCase();
+  function add(r: Resource, parentId?: string) {
     const nested = children.get(r.id) ?? [];
-    const size = isScope(r)
-      ? (sizes.get(r.id) ?? measure(r))
-      : { width: 214, height: 96 };
     const matches =
       !query ||
-      `${r.id} ${r.label} ${r.type}`
-        .toLowerCase()
-        .includes(query.toLowerCase());
+      `${r.id} ${r.label} ${r.type}`.toLowerCase().includes(lowerQuery);
     nodes.push({
       id: r.id,
       type: isScope(r) ? "scope" : "resource",
-      position: { x, y },
+      position: { x: 0, y: 0 },
       parentId,
       extent: parentId ? "parent" : undefined,
-      style: size,
+      style: LEAF,
       selected: r.id === selected,
       data: { resource: r, childCount: nested.length, muted: !matches },
     });
-    const groups = nested.filter(isScope),
-      leaves = nested.filter((item) => !isScope(item));
-    const rowHeight = groups.length
-      ? Math.max(
-          ...groups.map((item) => (sizes.get(item.id) ?? measure(item)).height),
-        ) + 24
-      : 0;
-    groups.forEach((item, i) =>
-      place(item, 22 + (i % 2) * 302, 68 + Math.floor(i / 2) * rowHeight, r.id),
-    );
-    const start = 68 + Math.ceil(groups.length / 2) * rowHeight;
-    const columns = r.type === "aws_vpc" ? 2 : 1;
-    leaves.forEach((item, i) =>
-      place(
-        item,
-        24 + (i % columns) * 300,
-        start + Math.floor(i / columns) * 116,
-        r.id,
-      ),
-    );
+    nested.filter(isScope).forEach((item) => add(item, r.id));
+    nested.filter((item) => !isScope(item)).forEach((item) => add(item, r.id));
   }
   const roots = resources.filter((r) => !parent(r));
-  let x = 20;
-  roots.filter(isScope).forEach((r) => {
-    const size = measure(r);
-    place(r, x, 30);
-    x += size.width + 42;
-  });
+  roots.filter(isScope).forEach((r) => add(r));
   const loose = roots.filter((r) => !isScope(r));
-  let column = 0;
-  for (let lane = 0; lane <= 4; lane++) {
-    const items = loose.filter((r) => laneOf(r) === lane);
-    items.forEach((r, i) =>
-      place(r, x + (column + Math.floor(i / 6)) * 248, 44 + (i % 6) * 130),
-    );
-    column += Math.ceil(items.length / 6);
-  }
+  for (let lane = 0; lane <= 4; lane++)
+    loose.filter((r) => laneOf(r) === lane).forEach((r) => add(r));
   const edges = relationships
     .filter((e) => byId.has(e.source) && byId.has(e.target))
     .filter((e) => parent(byId.get(e.target)!) !== e.source)
@@ -153,55 +104,11 @@ export function buildGraph(
       data: { reason: e.label },
       zIndex: 2,
     }));
-  return { nodes, edges };
-}
-
-/**
- * Puts new top-level nodes in a free column to the right of the nodes that
- * kept their position, stacked from the top. Nested nodes are relative to
- * their scope and stay where the layout put them.
- */
-export function placeAdded(
-  nodes: ResourceNode[],
-  added: ReadonlySet<string>,
-): ResourceNode[] {
-  let right = -Infinity;
-  for (const n of nodes)
-    if (!n.parentId && !added.has(n.id))
-      right = Math.max(right, n.position.x + Number(n.style?.width ?? 214));
-  if (right === -Infinity) return nodes;
-  let y = 30;
-  return nodes.map((n) => {
-    if (n.parentId || !added.has(n.id)) return n;
-    const placed = { ...n, position: { x: right + 60, y } };
-    y += Number(n.style?.height ?? 96) + 34;
-    return placed;
-  });
-}
-
-/**
- * Merges a new layout into the nodes on screen: a node keeps its position
- * (and its object, when `unchanged` says nothing visible changed). Only
- * `created`, a resource this client just created, moves to free space if it
- * is new; renamed or reappearing nodes take their place in the layout.
- */
-export function keepPositions(
-  previous: ResourceNode[],
-  next: ResourceNode[],
-  unchanged: (node: ResourceNode) => boolean,
-  created = "",
-): ResourceNode[] {
-  const byId = new Map(previous.map((n) => [n.id, n]));
-  let kept = 0;
-  const merged = next.map((node) => {
-    const old = byId.get(node.id);
-    if (!old || old.parentId !== node.parentId) return node;
-    kept++;
-    return unchanged(node) ? old : { ...node, position: old.position };
-  });
-  return created && kept && !byId.has(created)
-    ? placeAdded(merged, new Set([created]))
-    : merged;
+  return {
+    nodes:
+      layout === "layered" ? layeredLayout(nodes, edges) : gridLayout(nodes),
+    edges,
+  };
 }
 
 export const categoryNames: Record<string, string> = {

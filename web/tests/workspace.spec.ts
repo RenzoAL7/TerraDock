@@ -1510,3 +1510,124 @@ test("con 300 recursos, el SVG incluye los nodos que no están en pantalla", asy
   expect(png.bytes.subarray(1, 4).toString("ascii")).toBe("PNG");
   expect(violations).toEqual([]);
 });
+
+/** Each rendered node's transform (its place in the diagram), by id. */
+async function transforms(page: Page): Promise<Record<string, string>> {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>(".react-flow__node")].map(
+        (node) => [node.dataset.id!, node.style.transform],
+      ),
+    ),
+  );
+}
+
+/**
+ * Pairs of rendered nodes that overlap on screen without one holding the
+ * other (a VPC or subnet around its resources).
+ */
+async function overlaps(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const boxes = [
+      ...document.querySelectorAll<HTMLElement>(".react-flow__node"),
+    ].map((node) => ({
+      id: node.dataset.id!,
+      r: node.getBoundingClientRect(),
+    }));
+    const contains = (a: DOMRect, b: DOMRect) =>
+      a.left <= b.left + 0.5 &&
+      a.top <= b.top + 0.5 &&
+      a.right >= b.right - 0.5 &&
+      a.bottom >= b.bottom - 0.5;
+    const found: string[] = [];
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r,
+          b = boxes[j].r;
+        const meet =
+          a.left < b.right - 0.5 &&
+          b.left < a.right - 0.5 &&
+          a.top < b.bottom - 0.5 &&
+          b.top < a.bottom - 0.5;
+        if (meet && !contains(a, b) && !contains(b, a))
+          found.push(`${boxes[i].id} ↔ ${boxes[j].id}`);
+      }
+    return found;
+  });
+}
+
+test("Ordenar coloca el diagrama sin solapes y en capas", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("node-aws_instance.app_a")).toBeVisible();
+  await page.getByRole("button", { name: "Ordenar", exact: true }).click();
+  await expect.poll(() => overlaps(page)).toEqual([]);
+  // A project small enough to render every node: nothing overlaps either.
+  await openLocalFolder(page, largeProject(60), "aws_vpc.v0");
+  await page.getByRole("button", { name: "Ordenar", exact: true }).click();
+  await expect.poll(() => overlaps(page)).toEqual([]);
+  const placed = await transforms(page);
+  expect(Object.keys(placed)).toHaveLength(60);
+  // In layers: the group the instance references sits above it.
+  const group = await page
+    .getByTestId("node-aws_security_group.g2")
+    .boundingBox();
+  const instance = await page.getByTestId("node-aws_instance.i3").boundingBox();
+  expect(instance!.y).toBeGreaterThan(group!.y + group!.height);
+});
+
+test("la ayuda enlaza los avisos de licencia que incluye el binario", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ayuda", exact: true }).click();
+  const layout = page.getByRole("link", { name: /dagre, graphlib/ });
+  const fonts = page.getByRole("link", { name: "licencias de fuentes" });
+  const layoutText = await (
+    await request.get((await layout.getAttribute("href"))!)
+  ).text();
+  expect(layoutText).toContain("@dagrejs/dagre 3.1.3");
+  expect(layoutText).toContain("Permission is hereby granted");
+  expect(
+    await (await request.get((await fonts.getAttribute("href"))!)).text(),
+  ).toContain("SIL OPEN FONT LICENSE");
+});
+
+test("escribir un recurso nuevo o cambiar de vista no mueve los nodos existentes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await openLocalFolder(page);
+  await expect(page.getByTestId("node-aws_instance.web")).toBeVisible();
+  const before = await transforms(page);
+  expect(Object.keys(before).sort()).toEqual([
+    "aws_instance.web",
+    "aws_subnet.app",
+    "aws_vpc.main",
+  ]);
+
+  // Switching views (the code view unmounts the diagram) moves nothing.
+  await page.getByRole("button", { name: "Código", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  await expect(page.getByTestId("node-aws_instance.web")).toBeVisible();
+  expect(await transforms(page)).toEqual(before);
+
+  // A bucket typed in the middle of the file, and one inside the subnet.
+  await page.getByTestId("resource-aws_instance.web").click();
+  await replaceEditorContent(
+    page,
+    localSource.replace(
+      'resource "aws_subnet" "app"',
+      'resource "aws_s3_bucket" "typed" {\n  bucket_prefix = "typed-"\n}\n\nresource "aws_subnet" "app"',
+    ) +
+      '\nresource "aws_instance" "worker" {\n  ami           = var.ami_id\n  instance_type = "t3.micro"\n  subnet_id     = aws_subnet.app.id\n}\n',
+  );
+  await expect(page.getByTestId("node-aws_s3_bucket.typed")).toBeVisible();
+  await expect(page.getByTestId("node-aws_instance.worker")).toBeVisible();
+  const after = await transforms(page);
+  for (const id of Object.keys(before))
+    expect(after[id], `${id} no se movió`).toBe(before[id]);
+  await expect.poll(() => overlaps(page)).toEqual([]);
+});

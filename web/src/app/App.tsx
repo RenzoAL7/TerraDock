@@ -64,6 +64,8 @@ import {
 import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
 import { download } from "../lib/download";
+import layoutLicensesUrl from "../features/architecture/layout/layout-licenses.txt?url&no-inline";
+import fontLicensesUrl from "../landing/font-licenses.txt?url&no-inline";
 import { ApiError, api, errorMessage, liveApi } from "../lib/api";
 import type {
   Draft,
@@ -1519,6 +1521,17 @@ export default function App() {
             <p className="field-note">
               Los borradores abiertos en esta pestaña se siguen guardando
               mientras la tengas abierta.
+            </p>
+            <p className="field-note help-licenses">
+              Avisos de terceros incluidos:{" "}
+              <a href={layoutLicensesUrl} target="_blank" rel="noreferrer">
+                licencias del ordenado del diagrama (dagre, graphlib)
+              </a>{" "}
+              y{" "}
+              <a href={fontLicensesUrl} target="_blank" rel="noreferrer">
+                licencias de fuentes
+              </a>
+              .
             </p>
           </div>
         </Dialog>
