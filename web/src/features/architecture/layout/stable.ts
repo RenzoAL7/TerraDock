@@ -15,6 +15,7 @@ import {
   type Rect,
   type Size,
 } from "./geometry";
+import { layeredLayout } from "./layered";
 
 /** Where a node was when it disappeared, to put it back if it returns. */
 export interface Placement {
@@ -25,35 +26,50 @@ export interface Placement {
 export type Remembered = Map<string, Placement>;
 const REMEMBER = 2000;
 
-/** Fewer than this share of the previous nodes left: another diagram. */
-const KEPT_SHARE = 0.5;
-/** Changes smaller than this (nodes gone plus nodes new) never count as one. */
-const MIN_CHANGE = 10;
+/** Fewer new nodes than this never start a new layout. */
+const MIN_FRESH = 10;
 
 /**
- * Whether an update replaces most of the diagram instead of editing it: a
- * `git checkout` to another branch, a large file pasted over another, most
- * declarations deleted or written anew. Fewer than half of the previous
- * nodes remain, or the new ones outnumber those that remain. Such an update
- * is laid out in layers again; keeping the few places in common would leave
- * the rest scattered. Ids decide, so renaming most nodes at once also
- * counts. A change of fewer than ten nodes never does, so a small diagram
- * is not rearranged while typing.
+ * Whether an update brings a different diagram instead of editing the one on
+ * screen: a `git checkout` to another branch, a large file pasted into a
+ * small project. It does when the nodes that are really new (neither on
+ * screen nor in `returning`, the places of removed nodes) are at least ten
+ * and outnumber those that stay. Removing nodes never does, so cutting most
+ * of the diagram and pasting it back, or undoing a large deletion, puts each
+ * node back where it was. Ids decide, so renaming most nodes at once counts
+ * as new nodes. An empty diagram is always laid out.
  */
 export function replacesDiagram(
   prev: { id: string }[],
   next: { id: string }[],
+  returning: { has(id: string): boolean } = new Map(),
 ): boolean {
   if (!prev.length) return true;
-  const ids = new Set(next.map((n) => n.id));
-  let kept = 0;
-  for (const n of prev) if (ids.has(n.id)) kept++;
-  const added = next.length - kept,
-    removed = prev.length - kept;
-  return (
-    added + removed >= MIN_CHANGE &&
-    (kept < prev.length * KEPT_SHARE || added > kept)
-  );
+  const before = new Set(prev.map((n) => n.id));
+  let kept = 0,
+    fresh = 0;
+  for (const n of next)
+    if (before.has(n.id)) kept++;
+    else if (!returning.has(n.id)) fresh++;
+  return fresh >= MIN_FRESH && fresh > kept;
+}
+
+/**
+ * What the canvas does on every update after the first layout: keep the
+ * places (`stabilize`), or lay the diagram out in layers again when the
+ * update replaces it (`replacesDiagram`). A new layout starts from scratch:
+ * the remembered places belong to the old one, so they are forgotten.
+ */
+export function placeUpdate(
+  prev: ResourceNode[],
+  next: ResourceNode[],
+  edges: Pick<Edge, "source" | "target">[],
+  remembered: Remembered,
+): ResourceNode[] {
+  if (!replacesDiagram(prev, next, remembered))
+    return stabilize(prev, next, edges, remembered);
+  remembered.clear();
+  return layeredLayout(next, edges);
 }
 
 /**

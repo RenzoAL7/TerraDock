@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "../../../lib/types";
 import { buildGraph, type ResourceNode } from "../graph";
-import { replacesDiagram, stabilize, type Remembered } from "./stable";
+import {
+  placeUpdate,
+  replacesDiagram,
+  stabilize,
+  type Remembered,
+} from "./stable";
+import { layeredLayout } from "./layered";
 import {
   largeProject,
   overlapping,
@@ -343,9 +349,19 @@ describe("replacesDiagram", () => {
     ).toBe(true);
   });
 
-  it("lays out again when most of the diagram is deleted", () => {
+  it("never lays out again for removals, however many", () => {
     const all = ids("aws_instance", 300);
-    expect(replacesDiagram(all, all.slice(0, 100))).toBe(true);
+    expect(replacesDiagram(all, all.slice(0, 100))).toBe(false);
+    expect(replacesDiagram(all, [provider])).toBe(false);
+  });
+
+  it("counts returning nodes as known: pasting back what was cut is not a new diagram", () => {
+    const all = ids("aws_instance", 300);
+    const cut = all.slice(100);
+    const remembered = new Set(cut.map((n) => n.id));
+    expect(replacesDiagram(all.slice(0, 100), all, remembered)).toBe(false);
+    // Without that memory the same update would look like a large paste.
+    expect(replacesDiagram(all.slice(0, 100), all)).toBe(true);
   });
 
   it("lays out the first nodes of an empty diagram", () => {
@@ -370,7 +386,7 @@ describe("replacesDiagram", () => {
 
   it("does not rearrange a small diagram for a change of fewer than ten nodes", () => {
     const three = ids("aws_instance", 3);
-    // The only resource renamed, or two of three deleted.
+    // The only resource renamed, two of three deleted, six added.
     expect(replacesDiagram(three.slice(0, 1), [{ id: "aws_instance.x" }])).toBe(
       false,
     );
@@ -378,5 +394,74 @@ describe("replacesDiagram", () => {
     expect(replacesDiagram(three, [...three, ...ids("aws_sqs_queue", 6)])).toBe(
       false,
     );
+  });
+});
+
+describe("placeUpdate (what the canvas runs on every update)", () => {
+  /** A diagram the user arranged by hand: every top-level node moved. */
+  function arranged(count: number) {
+    const { resources, edges } = largeProject(count);
+    const nodes = buildGraph(resources, edges, "", "", "layered").nodes.map(
+      (n) =>
+        n.parentId
+          ? n
+          : { ...n, position: { x: n.position.x + 37, y: n.position.y } },
+    );
+    return { resources, edges, nodes };
+  }
+  const step = (
+    prev: ResourceNode[],
+    resources: Resource[],
+    edges: ReturnType<typeof reference>[],
+    remembered: Remembered,
+  ) => {
+    const graph = buildGraph(resources, edges, "");
+    return placeUpdate(prev, graph.nodes, graph.edges, remembered);
+  };
+
+  it.each([
+    [30, 18],
+    [60, 35],
+  ])(
+    "cutting most of %i resources (%i) moves nothing and pasting them back restores every place",
+    (count, cut) => {
+      const { resources, edges, nodes } = arranged(count);
+      const leaves = resources.filter(
+        (r) => !resources.some((o) => o.parentId === r.id),
+      );
+      const gone = new Set(leaves.slice(-cut).map((r) => r.id));
+      expect(gone.size * 2).toBeGreaterThan(nodes.length);
+      const remembered: Remembered = new Map();
+      const afterCut = step(
+        nodes,
+        resources.filter((r) => !gone.has(r.id)),
+        edges.filter((e) => !gone.has(e.source) && !gone.has(e.target)),
+        remembered,
+      );
+      for (const n of afterCut)
+        expect(n.position, n.id).toEqual(at(nodes, n.id).position);
+      const afterPaste = step(afterCut, resources, edges, remembered);
+      expect(positionsById(afterPaste)).toEqual(positionsById(nodes));
+    },
+  );
+
+  it("lays a checkout to another branch out in layers and forgets the old places", () => {
+    const { nodes } = arranged(30);
+    const remembered: Remembered = new Map([
+      [
+        "aws_s3_bucket.gone",
+        { type: "aws_s3_bucket", position: { x: 1, y: 2 } },
+      ],
+    ]);
+    const other = [
+      resource("provider.aws"),
+      ...Array.from({ length: 40 }, (_, k) => resource(`aws_sqs_queue.q${k}`)),
+    ];
+    const next = step(nodes, other, [], remembered);
+    const graph = buildGraph(other, [], "");
+    expect(positionsById(next)).toEqual(
+      positionsById(layeredLayout(graph.nodes, graph.edges)),
+    );
+    expect(remembered.size).toBe(0);
   });
 });
