@@ -14,46 +14,34 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import {
-  Box,
-  Database,
-  Globe2,
-  Layers3,
-  LogOut,
+  Download,
   Maximize,
   Minus,
   Network,
-  Plug,
   Plus,
   Repeat2,
-  Route,
-  Server,
-  ShieldCheck,
-  Sigma,
-  SlidersHorizontal,
   Workflow,
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
-import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import {
   buildGraph,
+  cardDetail,
   keepPositions,
   nodeSignature,
+  repeatMark,
+  scopeMeta,
   shortType,
   type ResourceNode,
 } from "./graph";
+import { iconFor, markStyle } from "./diagramIcons";
 import type { DeployMark } from "../deploy/useFloci";
+import { exportDiagram, type ExportFormat } from "./rasterize";
+import { download } from "../../lib/download";
 
-const markLabel: Record<DeployMark, string> = {
-  create: "+ crear",
-  update: "~ actualizar",
-  replace: "± reemplazar",
-  delete: "− eliminar",
-  deployed: "✓ en Floci",
-};
 function NodeMark({ mark }: { mark?: DeployMark }) {
   return mark ? (
     <span className={`deploy-mark mark-${mark}`} data-testid="deploy-mark">
-      {markLabel[mark]}
+      {markStyle[mark].label}
     </span>
   ) : null;
 }
@@ -83,69 +71,24 @@ export function ResourceIcon({
   resource: Resource;
   size?: number;
 }) {
-  const Icon =
-    resource.type === "aws_internet_gateway"
-      ? Globe2
-      : resource.type.includes("route")
-        ? Route
-        : {
-            network: Network,
-            compute: Server,
-            security: ShieldCheck,
-            database: Database,
-            storage: Box,
-            loadbalancer: Workflow,
-            variable: SlidersHorizontal,
-            local: Sigma,
-            output: LogOut,
-            provider: Plug,
-            other: Layers3,
-          }[resource.category] || Layers3;
+  const { Icon } = iconFor(resource);
   return <Icon size={size} strokeWidth={1.65} />;
 }
 
-/** The one value a card shows under its name, by kind of declaration. */
-const detailProperties: Partial<Record<Resource["block"], string[]>> = {
-  variable: ["default", "type"],
-  local: ["value"],
-  output: ["value"],
-  provider: ["region"],
-};
-
-/**
- * count / for_each blocks are declarations, not expanded instances: say so on
- * the card instead of drawing a guessed number of copies.
- */
 function RepeatMark({ resource }: { resource: Resource }) {
-  const p = resource.properties.find(
-    (p) => p.name === "count" || p.name === "for_each",
-  );
-  if (!p) return null;
-  const text =
-    p.name === "count" ? `× ${String(p.value ?? p.expression)}` : `for_each`;
+  const mark = repeatMark(resource);
+  if (!mark) return null;
   return (
-    <span
-      className="repeat-mark"
-      data-testid="repeat-mark"
-      title={`${p.name} = ${p.expression}. Se muestra el bloque declarado, sin expandir sus instancias.`}
-    >
+    <span className="repeat-mark" data-testid="repeat-mark" title={mark.title}>
       <Repeat2 size={11} />
-      {text}
+      {mark.text}
     </span>
   );
 }
 
 function ResourceCard({ data }: NodeProps<ResourceNode>) {
   const r = data.resource;
-  const names = detailProperties[r.block] ?? [
-    "instance_type",
-    "engine",
-    "bucket_prefix",
-    "internal",
-  ];
-  const p = names
-    .map((name) => r.properties.find((p) => p.name === name))
-    .find(Boolean);
+  const icon = iconFor(r);
   return (
     <div
       className={`resource-node ${r.category} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
@@ -153,7 +96,10 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
     >
       <Handle type="target" position={Position.Top} />
       <div className="node-heading">
-        <span className="resource-icon">
+        <span
+          className="resource-icon"
+          style={{ color: icon.color, background: icon.background }}
+        >
           <ResourceIcon resource={r} />
         </span>
         <span className="node-kind">{shortType(r.type)}</span>
@@ -162,13 +108,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
         {!data.mark && <span className="node-dot" />}
       </div>
       <strong title={r.id}>{r.label || r.name}</strong>
-      <span className="node-detail">
-        {p
-          ? hidesValue(r, p)
-            ? SENSITIVE_TEXT
-            : String(p.value ?? p.expression).replaceAll('"', "")
-          : r.file}
-      </span>
+      <span className="node-detail">{cardDetail(r)}</span>
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
@@ -176,8 +116,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
 
 function ScopeCard({ data }: NodeProps<ResourceNode>) {
   const r = data.resource;
-  const cidr = r.properties.find((p) => p.name === "cidr_block"),
-    az = r.properties.find((p) => p.name === "availability_zone");
+  const [cidr, detail] = scopeMeta(r, data.childCount);
   return (
     <div
       className={`scope-node ${r.type === "aws_vpc" ? "vpc-scope" : "subnet-scope"} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
@@ -194,12 +133,8 @@ function ScopeCard({ data }: NodeProps<ResourceNode>) {
         <NodeMark mark={data.mark as DeployMark | undefined} />
       </div>
       <div className="scope-meta">
-        <span>{String(cidr?.value ?? cidr?.expression ?? "")}</span>
-        <span>
-          {az
-            ? String(az.value ?? az.expression)
-            : `${data.childCount} recursos`}
-        </span>
+        <span>{cidr}</span>
+        <span>{detail}</span>
       </div>
       {!data.childCount && (
         <span className="empty-scope">Sin recursos asociados</span>
@@ -227,6 +162,10 @@ interface Props {
   created?: string;
   /** The created resource is on the canvas: stop placing it. */
   onPlaced?: (id: string) => void;
+  /** Named in the band of SVG/PNG exports. */
+  projectName?: string;
+  /** Files with unsaved drafts that the diagram reflects. */
+  unsavedFiles?: number;
 }
 function Graph({
   resources,
@@ -241,11 +180,56 @@ function Graph({
   project = "",
   created = "",
   onPlaced,
+  projectName = "Proyecto",
+  unsavedFiles = 0,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView, zoomIn, zoomOut, getInternalNode, getZoom, setCenter } =
-    useReactFlow();
+  const {
+    fitView,
+    zoomIn,
+    zoomOut,
+    getInternalNode,
+    getZoom,
+    setCenter,
+    getNodes,
+    getEdges,
+  } = useReactFlow<ResourceNode>();
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState("");
+  const [exportError, setExportError] = useState("");
+  // From the model, not the DOM: with more than 150 resources only the
+  // visible nodes are rendered.
+  const exportAs = async (format: ExportFormat) => {
+    setExportOpen(false);
+    setExportError("");
+    setExporting(format);
+    try {
+      const { blob, name } = await exportDiagram(format, {
+        nodes: getNodes(),
+        edges: getEdges(),
+        caption: {
+          project: projectName,
+          date: new Intl.DateTimeFormat("es", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(new Date()),
+          resources: resources.length,
+          filter: query.trim() || undefined,
+          drafts: unsavedFiles,
+        },
+      });
+      download(name, blob);
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? `No se pudo exportar: ${error.message}`
+          : "No se pudo exportar el diagrama.",
+      );
+    } finally {
+      setExporting("");
+    }
+  };
   // Center on resources chosen outside the canvas (explorer, editor caret,
   // inspector references), even in large diagrams that only render what is
   // visible. `focus.n` changes on every request, including repeated ones.
@@ -446,7 +430,43 @@ function Graph({
         >
           <Workflow size={15} /> Ordenar
         </button>
+        <button
+          className="layout-button"
+          aria-haspopup="menu"
+          aria-expanded={exportOpen}
+          disabled={!resources.length || !!exporting}
+          title="Exportar el diagrama completo como imagen"
+          onClick={() => setExportOpen((open) => !open)}
+        >
+          <Download size={15} />{" "}
+          {exporting ? `Exportando ${exporting.toUpperCase()}…` : "Exportar"}
+        </button>
+        {exportOpen && (
+          <div
+            className="export-menu"
+            role="menu"
+            aria-label="Formato de exportación"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setExportOpen(false);
+            }}
+          >
+            <button role="menuitem" onClick={() => void exportAs("svg")}>
+              SVG <span>vectorial, con fuentes</span>
+            </button>
+            <button role="menuitem" onClick={() => void exportAs("png")}>
+              PNG <span>imagen a 2×</span>
+            </button>
+          </div>
+        )}
       </div>
+      {exportError && (
+        <div className="export-error" role="alert">
+          {exportError}
+          <button aria-label="Cerrar aviso" onClick={() => setExportError("")}>
+            ×
+          </button>
+        </div>
+      )}
       <div className="canvas-legend">
         <span>
           <i className="legend-containment" /> Agrupación

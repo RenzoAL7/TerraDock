@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { Resource, ResourceEdge } from "../../lib/types";
+import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 
 export type ResourceNodeData = {
   resource: Resource;
@@ -258,4 +259,60 @@ export function nodeSignature(r: Resource) {
     ]),
     r.dependsOn,
   ]);
+}
+
+/** The one value a card shows under its name, by kind of declaration. */
+const detailProperties: Partial<Record<Resource["block"], string[]>> = {
+  variable: ["default", "type"],
+  local: ["value"],
+  output: ["value"],
+  provider: ["region"],
+};
+
+/**
+ * The line under a card's name: its main value, hidden when Terraform would
+ * redact it, or the file it is declared in.
+ */
+export function cardDetail(r: Resource): string {
+  const names = detailProperties[r.block] ?? [
+    "instance_type",
+    "engine",
+    "bucket_prefix",
+    "internal",
+  ];
+  const p = names
+    .map((name) => r.properties.find((p) => p.name === name))
+    .find(Boolean);
+  if (!p) return r.file;
+  return hidesValue(r, p)
+    ? SENSITIVE_TEXT
+    : String(p.value ?? p.expression).replaceAll('"', "");
+}
+
+/**
+ * count / for_each blocks are declarations, not expanded instances: the card
+ * says so instead of drawing a guessed number of copies.
+ */
+export function repeatMark(
+  r: Resource,
+): { text: string; title: string } | null {
+  const p = r.properties.find(
+    (p) => p.name === "count" || p.name === "for_each",
+  );
+  if (!p) return null;
+  return {
+    text:
+      p.name === "count" ? `× ${String(p.value ?? p.expression)}` : "for_each",
+    title: `${p.name} = ${p.expression}. Se muestra el bloque declarado, sin expandir sus instancias.`,
+  };
+}
+
+/** VPC/subnet meta line: CIDR on the left; zone or child count on the right. */
+export function scopeMeta(r: Resource, childCount: number): [string, string] {
+  const cidr = r.properties.find((p) => p.name === "cidr_block"),
+    az = r.properties.find((p) => p.name === "availability_zone");
+  return [
+    String(cidr?.value ?? cidr?.expression ?? ""),
+    az ? String(az.value ?? az.expression) : `${childCount} recursos`,
+  ];
 }

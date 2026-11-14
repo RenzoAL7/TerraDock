@@ -1408,3 +1408,105 @@ test("con 300 recursos, archivo, código e inspector llegan al diagrama en menos
   for (const [path, ms] of Object.entries(timings))
     expect(ms, `${path} → diagrama`).toBeLessThan(1_000);
 });
+
+/** Records CSP violations reported by the page and by the console. */
+async function watchCsp(page: Page): Promise<string[]> {
+  const violations: string[] = [];
+  page.on("console", (message) => {
+    if (/Content Security Policy|Refused to/i.test(message.text()))
+      violations.push(message.text());
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (event) =>
+      console.error(
+        `Refused by Content Security Policy: ${event.violatedDirective} ${event.blockedURI}`,
+      ),
+    );
+  });
+  return violations;
+}
+
+async function exportFile(page: Page, format: "SVG" | "PNG") {
+  await page.getByRole("button", { name: "Exportar", exact: true }).click();
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: new RegExp(`^${format}`) }).click();
+  const file = await downloaded;
+  return {
+    name: file.suggestedFilename(),
+    bytes: await readFile(await file.path()),
+  };
+}
+
+/** Parses the SVG in the browser: XML errors and what it draws. */
+async function parseSvg(page: Page, svg: string) {
+  return page.evaluate((text) => {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    return {
+      error: doc.querySelector("parsererror")?.textContent ?? "",
+      root: doc.documentElement.nodeName,
+      ids: [...doc.querySelectorAll("[data-id]")].map((n) =>
+        n.getAttribute("data-id"),
+      ),
+      paths: doc.querySelectorAll("path[data-edge]").length,
+      scripts: doc.querySelectorAll("script, foreignObject").length,
+      band: doc.querySelector('[data-band="caption"]')?.textContent ?? "",
+    };
+  }, svg);
+}
+
+test("exporta el diagrama a SVG y PNG sin salir de la CSP local", async ({
+  page,
+  request,
+}) => {
+  const violations = await watchCsp(page);
+  await page.goto("/");
+  await expect(page.getByTestId("node-aws_instance.app_a")).toBeVisible();
+  const expected = (await project(request)).resources.map((r) => r.id);
+
+  const svg = await exportFile(page, "SVG");
+  expect(svg.name).toMatch(/-arquitectura\.svg$/);
+  const parsed = await parseSvg(page, svg.bytes.toString("utf8"));
+  expect(parsed.error).toBe("");
+  expect(parsed.root).toBe("svg");
+  expect(parsed.scripts).toBe(0);
+  expect(new Set(parsed.ids)).toEqual(new Set(expected));
+  expect(parsed.ids).toHaveLength(expected.length);
+  expect(parsed.paths).toBeGreaterThan(0);
+  expect(parsed.band).toContain(`${expected.length} recursos`);
+  // The fonts travel inside the file.
+  expect(svg.bytes.toString("utf8")).toContain("data:font/woff2;base64,");
+
+  const png = await exportFile(page, "PNG");
+  expect(png.name).toMatch(/-arquitectura\.png$/);
+  expect([...png.bytes.subarray(0, 8)]).toEqual([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+  expect(png.bytes.subarray(12, 16).toString("ascii")).toBe("IHDR");
+  expect(png.bytes.readUInt32BE(16)).toBeGreaterThan(600);
+  expect(png.bytes.readUInt32BE(20)).toBeGreaterThan(200);
+  expect(violations).toEqual([]);
+});
+
+test("con 300 recursos, el SVG incluye los nodos que no están en pantalla", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const violations = await watchCsp(page);
+  await page.goto("/");
+  await openLocalFolder(page, largeProject(300), "aws_vpc.v0");
+  // Centered and zoomed on the first VPC, the last nodes are not rendered.
+  await page.getByTestId("resource-aws_vpc.v0").click();
+  await expect(page.getByTestId("node-aws_vpc.v0")).toBeVisible();
+  await expect(page.getByTestId("node-aws_instance.i299")).toHaveCount(0);
+
+  const svg = await exportFile(page, "SVG");
+  const parsed = await parseSvg(page, svg.bytes.toString("utf8"));
+  expect(parsed.error).toBe("");
+  expect(parsed.ids).toHaveLength(300);
+  expect(parsed.ids).toContain("aws_instance.i299");
+  expect(parsed.band).toContain("300 recursos");
+
+  const png = await exportFile(page, "PNG");
+  expect(png.bytes.subarray(1, 4).toString("ascii")).toBe("PNG");
+  expect(violations).toEqual([]);
+});
