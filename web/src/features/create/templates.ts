@@ -32,6 +32,8 @@ export interface ResourceTemplate {
   description: string;
   defaultName: string;
   attributes: TemplateAttribute[];
+  /** Shown in the dialog whenever the template is chosen. */
+  notice?: string;
 }
 
 const lambdaTrust = `jsonencode({
@@ -123,10 +125,7 @@ export const templates: ResourceTemplate[] = [
       {
         name: "bucket_prefix",
         fromName: bucketPrefix,
-        notice: (name) =>
-          bucketBase(name).length > BUCKET_BASE
-            ? `bucket_prefix se recorta a ${BUCKET_BASE + 1} caracteres: AWS no admite más.`
-            : "",
+        notice: bucketNotice,
       },
     ],
   },
@@ -165,7 +164,7 @@ export const templates: ResourceTemplate[] = [
     type: "aws_db_instance",
     label: "Base de datos RDS",
     description:
-      "PostgreSQL cifrado y protegido contra borrado, con la contraseña gestionada por AWS.",
+      "PostgreSQL cifrado, con la contraseña gestionada por AWS; se puede destruir sin snapshot final.",
     defaultName: "db",
     attributes: [
       { name: "engine", value: "postgres" },
@@ -174,10 +173,12 @@ export const templates: ResourceTemplate[] = [
       { name: "username", value: "app" },
       { name: "manage_master_user_password", value: true },
       { name: "storage_encrypted", value: true },
-      // Destroying it needs deletion_protection = false first, and then a
-      // final_snapshot_identifier or skip_final_snapshot = true.
-      { name: "deletion_protection", value: true },
+      // Destroyable as is, so it can be created and removed in Floci.
+      { name: "deletion_protection", value: false },
+      { name: "skip_final_snapshot", value: true },
     ],
+    notice:
+      "Para AWS real, activa deletion_protection y quita skip_final_snapshot.",
   },
   {
     type: "aws_internet_gateway",
@@ -209,9 +210,33 @@ function bucketBase(name: string) {
       .replace(/^[^a-z0-9]+/, "") || "bucket"
   );
 }
+/** Bucket name prefixes S3 reserves for its own use. */
+const RESERVED_PREFIXES = ["xn--", "sthree-", "amzn-s3-demo-"];
+const reservedPrefix = (prefix: string) =>
+  RESERVED_PREFIXES.some((reserved) => prefix.startsWith(reserved));
+function cutPrefix(base: string) {
+  return `${base.slice(0, BUCKET_BASE).replace(/-+$/, "")}-`;
+}
 /** A valid S3 bucket_prefix derived from the resource name. */
 export function bucketPrefix(name: string) {
-  return `${bucketBase(name).slice(0, BUCKET_BASE).replace(/-+$/, "")}-`;
+  const prefix = cutPrefix(bucketBase(name));
+  return reservedPrefix(prefix)
+    ? cutPrefix(`bucket-${bucketBase(name)}`)
+    : prefix;
+}
+function bucketNotice(name: string) {
+  const base = bucketBase(name);
+  const reserved = reservedPrefix(cutPrefix(base));
+  const notes = [];
+  if (reserved)
+    notes.push(
+      "bucket_prefix empieza por bucket- porque S3 reserva los nombres que empiezan por xn--, sthree- o amzn-s3-demo-.",
+    );
+  if ((reserved ? `bucket-${base}` : base).length > BUCKET_BASE)
+    notes.push(
+      `bucket_prefix se recorta a ${BUCKET_BASE + 1} caracteres: AWS no admite más.`,
+    );
+  return notes.join(" ");
 }
 
 /** Same rule the server applies to resource names. */

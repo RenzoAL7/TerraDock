@@ -142,9 +142,12 @@ export function CreateResourceDialog({
     (attr) =>
       "reference" in attr && attr.reference.required && !references[attr.name],
   );
-  const notices = template.attributes
-    .map((attr) => ("notice" in attr && attr.notice ? attr.notice(name) : ""))
-    .filter(Boolean);
+  const notices = [
+    ...template.attributes.map((attr) =>
+      "notice" in attr && attr.notice ? attr.notice(name) : "",
+    ),
+    template.notice ?? "",
+  ].filter(Boolean);
   return (
     <Dialog title="Crear recurso" onClose={onClose} wide>
       <form

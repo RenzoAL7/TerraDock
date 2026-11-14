@@ -94,15 +94,32 @@ describe("resource templates", () => {
     expect("notice" in s3 && s3.notice!("logs")).toBe("");
   });
 
-  it("protects the RDS template by default", () => {
-    const attrs = buildResource(
-      template("aws_db_instance"),
-      "db",
-      {},
-    ).attributes;
+  it("keeps the RDS template destroyable and says what to change for real AWS", () => {
+    const rds = template("aws_db_instance");
+    const attrs = buildResource(rds, "db", {}).attributes;
     expect(attrs).toContainEqual({ name: "storage_encrypted", value: true });
-    expect(attrs).toContainEqual({ name: "deletion_protection", value: true });
-    expect(attrs.map((a) => a.name)).not.toContain("skip_final_snapshot");
+    expect(attrs).toContainEqual({ name: "deletion_protection", value: false });
+    expect(attrs).toContainEqual({ name: "skip_final_snapshot", value: true });
+    expect(rds.notice).toContain("deletion_protection");
+    expect(rds.notice).toContain("skip_final_snapshot");
+  });
+
+  it("never derives a bucket_prefix S3 reserves", () => {
+    expect(bucketPrefix("xn__logs")).toBe("bucket-xn--logs-");
+    expect(bucketPrefix("sthree")).toBe("bucket-sthree-");
+    expect(bucketPrefix("sthree_configurator")).toBe(
+      "bucket-sthree-configurator-",
+    );
+    expect(bucketPrefix("amzn_s3_demo")).toBe("bucket-amzn-s3-demo-");
+    expect(bucketPrefix("amzn_s3_demo_" + "x".repeat(40))).toHaveLength(37);
+    // Close but not reserved: kept as is.
+    expect(bucketPrefix("xn_logs")).toBe("xn-logs-");
+    expect(bucketPrefix("amzn_s3")).toBe("amzn-s3-");
+    const s3 = template("aws_s3_bucket").attributes[0];
+    const notice = "notice" in s3 ? s3.notice! : () => "";
+    expect(notice("sthree")).toContain("S3 reserva");
+    expect(notice("sthree")).not.toContain("37");
+    expect(notice("amzn_s3_demo_" + "x".repeat(40))).toContain("37");
   });
 
   it("offers only declarations of the referenced kind", () => {
