@@ -36,7 +36,7 @@ import { iconFor, markStyle } from "./diagramIcons";
 import type { DeployMark } from "../deploy/useFloci";
 import { exportDiagram, type ExportFormat } from "./rasterize";
 import { download } from "../../lib/download";
-import { stabilize, type Remembered } from "./layout/stable";
+import { replacesDiagram, stabilize, type Remembered } from "./layout/stable";
 import { layeredLayout } from "./layout/layered";
 
 /**
@@ -345,6 +345,7 @@ function Graph({
   // The full layout runs once per project. After that, every update (typing,
   // the inspector, a file changed on disk, switching views) keeps the places
   // and only fits new nodes in: stabilize() never lays everything out again.
+  // Only an update that replaces most of the diagram is laid out again.
   const laidOut = useRef(
     remembered?.projectKey === projectKey ? projectKey : "",
   );
@@ -364,11 +365,11 @@ function Graph({
     );
     setNodes((previous) => {
       if (full) return reuse(previous, decorate(graph.nodes));
-      const ids = new Set(graph.nodes.map((n) => n.id));
-      // Nothing in common (all declarations replaced): lay out from scratch.
-      const placed = previous.some((n) => ids.has(n.id))
-        ? stabilize(previous, graph.nodes, graph.edges, forgotten.current)
-        : layeredLayout(graph.nodes, graph.edges);
+      // Most of the diagram replaced (another branch, a large file pasted):
+      // lay it out from scratch instead of keeping the few places in common.
+      const placed = replacesDiagram(previous, graph.nodes)
+        ? layeredLayout(graph.nodes, graph.edges)
+        : stabilize(previous, graph.nodes, graph.edges, forgotten.current);
       return reuse(previous, decorate(placed));
     });
     setEdges((previous) =>

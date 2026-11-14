@@ -25,6 +25,37 @@ export interface Placement {
 export type Remembered = Map<string, Placement>;
 const REMEMBER = 2000;
 
+/** Fewer than this share of the previous nodes left: another diagram. */
+const KEPT_SHARE = 0.5;
+/** Changes smaller than this (nodes gone plus nodes new) never count as one. */
+const MIN_CHANGE = 10;
+
+/**
+ * Whether an update replaces most of the diagram instead of editing it: a
+ * `git checkout` to another branch, a large file pasted over another, most
+ * declarations deleted or written anew. Fewer than half of the previous
+ * nodes remain, or the new ones outnumber those that remain. Such an update
+ * is laid out in layers again; keeping the few places in common would leave
+ * the rest scattered. Ids decide, so renaming most nodes at once also
+ * counts. A change of fewer than ten nodes never does, so a small diagram
+ * is not rearranged while typing.
+ */
+export function replacesDiagram(
+  prev: { id: string }[],
+  next: { id: string }[],
+): boolean {
+  if (!prev.length) return true;
+  const ids = new Set(next.map((n) => n.id));
+  let kept = 0;
+  for (const n of prev) if (ids.has(n.id)) kept++;
+  const added = next.length - kept,
+    removed = prev.length - kept;
+  return (
+    added + removed >= MIN_CHANGE &&
+    (kept < prev.length * KEPT_SHARE || added > kept)
+  );
+}
+
 /**
  * Places the nodes of a freshly built graph (`next`) without moving what the
  * user already sees (`prev`). It never lays the whole diagram out again:

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "../../../lib/types";
 import { buildGraph, type ResourceNode } from "../graph";
-import { stabilize, type Remembered } from "./stable";
+import { replacesDiagram, stabilize, type Remembered } from "./stable";
 import {
   largeProject,
   overlapping,
@@ -319,5 +319,64 @@ describe("stabilize", () => {
     expect(overlapping(next)).toEqual([]);
     for (const n of laidOut)
       expect(at(next, n.id).position).toEqual(n.position);
+  });
+});
+
+describe("replacesDiagram", () => {
+  const ids = (prefix: string, count: number) =>
+    Array.from({ length: count }, (_, k) => ({ id: `${prefix}.n${k}` }));
+  const provider = { id: "provider.aws" };
+
+  it("lays out again a checkout that only shares the provider or a variable", () => {
+    expect(
+      replacesDiagram(
+        [provider, { id: "var.region" }, ...ids("aws_instance", 300)],
+        [provider, { id: "var.region" }, ...ids("aws_s3_bucket", 300)],
+      ),
+    ).toBe(true);
+  });
+
+  it("lays out again a large file pasted into a small project", () => {
+    const small = ids("aws_instance", 20);
+    expect(
+      replacesDiagram(small, [...small, ...ids("aws_sqs_queue", 200)]),
+    ).toBe(true);
+  });
+
+  it("lays out again when most of the diagram is deleted", () => {
+    const all = ids("aws_instance", 300);
+    expect(replacesDiagram(all, all.slice(0, 100))).toBe(true);
+  });
+
+  it("lays out the first nodes of an empty diagram", () => {
+    expect(replacesDiagram([], ids("aws_instance", 3))).toBe(true);
+  });
+
+  it("keeps the places while editing: one node more, a rename, or a module pasted into a large project", () => {
+    const all = [provider, ...ids("aws_instance", 300)];
+    expect(replacesDiagram(all, [...all, { id: "aws_s3_bucket.new" }])).toBe(
+      false,
+    );
+    expect(
+      replacesDiagram(all, [
+        ...all.filter((n) => n.id !== "aws_instance.n7"),
+        { id: "aws_instance.renamed" },
+      ]),
+    ).toBe(false);
+    expect(replacesDiagram(all, [...all, ...ids("aws_sqs_queue", 200)])).toBe(
+      false,
+    );
+  });
+
+  it("does not rearrange a small diagram for a change of fewer than ten nodes", () => {
+    const three = ids("aws_instance", 3);
+    // The only resource renamed, or two of three deleted.
+    expect(replacesDiagram(three.slice(0, 1), [{ id: "aws_instance.x" }])).toBe(
+      false,
+    );
+    expect(replacesDiagram(three, three.slice(0, 1))).toBe(false);
+    expect(replacesDiagram(three, [...three, ...ids("aws_sqs_queue", 6)])).toBe(
+      false,
+    );
   });
 });
