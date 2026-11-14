@@ -172,6 +172,59 @@ test("creating a resource appends it to main.tf, selects it and draws it in its 
   ).toBeVisible();
 });
 
+test("while a resource is being created the code cannot change under it", async ({
+  page,
+}) => {
+  // Hold create requests to the in-browser engine until the test says so.
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    const held: (() => void)[] = [];
+    Object.assign(window, {
+      releaseCreate: () => held.splice(0).forEach((send) => send()),
+      heldCreates: () => held.length,
+    });
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      const send = () => post.apply(this, args as [unknown]);
+      const message = args[0] as { request?: { operation?: string } };
+      if (message?.request?.operation === "create") held.push(send);
+      else send();
+    };
+  });
+  await page.goto("/demo/");
+  await ready(page);
+  const editor = page.getByRole("textbox", {
+    name: "Código Terraform del ejemplo",
+  });
+  const original = await editor.inputValue();
+  await page.getByLabel("Crear", { exact: true }).selectOption("aws_subnet");
+  await page.getByLabel("Nombre del recurso nuevo").fill("db");
+  await page.getByRole("button", { name: "Crear recurso en main.tf" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as never as { heldCreates: () => number }).heldCreates(),
+      ),
+    )
+    .toBe(1);
+  await expect(editor).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("Ejemplo", { exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Reiniciar ejemplo" }),
+  ).toBeDisabled();
+  await page.evaluate(() =>
+    (window as never as { releaseCreate: () => void }).releaseCreate(),
+  );
+  await expect(editor).not.toHaveAttribute("readonly", "");
+  expect(await editor.inputValue()).toContain(
+    original + '\nresource "aws_subnet" "db" {',
+  );
+  await expect(
+    page.getByText(
+      "aws_subnet.db añadido al final de main.tf y a la arquitectura.",
+    ),
+  ).toBeVisible();
+});
+
 test("references move resources between scopes and selection navigates to real source", async ({
   page,
 }) => {

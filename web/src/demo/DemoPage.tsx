@@ -347,7 +347,13 @@ export function DemoPage() {
         property,
         value,
       });
-      if (!mounted.current || source !== codeRef.current) return;
+      if (!mounted.current) return;
+      if (source !== codeRef.current) {
+        setNotice(
+          `No se aplicó ${property}: el código cambió mientras se preparaba. Vuelve a intentarlo.`,
+        );
+        return;
+      }
       codeRef.current = result.content;
       setCode(result.content);
       setEvaluation(result);
@@ -376,12 +382,20 @@ export function DemoPage() {
         content: source,
         resource: spec,
       });
-      if (!mounted.current || source !== codeRef.current) return;
+      const id = `${spec.type}.${spec.name}`;
+      if (!mounted.current) return;
+      // The editor is read-only meanwhile; still, never paste the block over
+      // text that is no longer the one it was computed on.
+      if (source !== codeRef.current) {
+        setNotice(
+          `No se creó ${id}: el código cambió mientras se preparaba. Vuelve a intentarlo.`,
+        );
+        return;
+      }
       codeRef.current = result.content;
       setCode(result.content);
       setEvaluation(result);
       if (result.analysis?.valid) setLastValid(result.analysis);
-      const id = `${spec.type}.${spec.name}`;
       setSelected(id);
       setNotice(`${id} añadido al final de main.tf y a la arquitectura.`);
       requestAnimationFrame(() => {
