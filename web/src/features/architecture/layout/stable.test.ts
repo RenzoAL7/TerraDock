@@ -3,6 +3,7 @@ import type { Resource } from "../../../lib/types";
 import { buildGraph, type ResourceNode } from "../graph";
 import { stabilize, type Remembered } from "./stable";
 import {
+  largeProject,
   overlapping,
   outside,
   positionsById,
@@ -262,5 +263,61 @@ describe("stabilize", () => {
     expect(update(prev, input, [], new Map())).toEqual(
       update(prev, input, [], new Map()),
     );
+  });
+
+  it("fits hundreds of new resources at once among a thousand without overlap", () => {
+    const base = largeProject(1000);
+    const prev = buildGraph(
+      base.resources,
+      base.edges,
+      "",
+      "",
+      "layered",
+    ).nodes;
+    const instances = base.resources.filter((r) => r.type === "aws_instance");
+    const added = Array.from({ length: 500 }, (_, k) =>
+      resource(`aws_s3_bucket.b${k}`),
+    );
+    // Half of them next to an instance, the other half with no neighbor.
+    const links = added
+      .filter((_, k) => k % 2 === 0)
+      .map((r, k) => reference(instances[k % instances.length].id, r.id));
+    const next = update(
+      prev,
+      [...base.resources, ...added],
+      [...base.edges, ...links],
+    );
+    expect(overlapping(next)).toEqual([]);
+    expect(outside(next)).toEqual([]);
+    for (const n of prev) expect(at(next, n.id).position).toEqual(n.position);
+  });
+
+  it("keeps new resources off a very large container", () => {
+    const resources = [
+      resource("aws_vpc.big"),
+      resource("aws_instance.far", "aws_vpc.big"),
+      resource("aws_s3_bucket.a"),
+    ];
+    // Dragged far inside the VPC, so the VPC spans thousands of pixels.
+    const prev = buildGraph(resources, [], "", "", "layered").nodes.map((n) =>
+      n.id === "aws_instance.far"
+        ? { ...n, position: { x: 4000, y: 4000 } }
+        : n,
+    );
+    const laidOut = update(prev, resources);
+    expect(Number(at(laidOut, "aws_vpc.big").style!.width)).toBeGreaterThan(
+      4000,
+    );
+    const added = Array.from({ length: 30 }, (_, k) =>
+      resource(`aws_sqs_queue.q${k}`),
+    );
+    const next = update(
+      laidOut,
+      [...resources, ...added],
+      [reference("aws_vpc.big", "aws_sqs_queue.q0")],
+    );
+    expect(overlapping(next)).toEqual([]);
+    for (const n of laidOut)
+      expect(at(next, n.id).position).toEqual(n.position);
   });
 });

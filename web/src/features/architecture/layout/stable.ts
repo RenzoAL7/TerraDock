@@ -132,6 +132,8 @@ export function stabilize(
       } else pending.push(kid);
     }
     pushApart(rects, grown);
+    // Built only when something has to be placed.
+    let taken: Occupied | undefined;
     const origin = container === undefined ? ROOT : CONTENT;
     const maxRight =
       container === undefined || !parent
@@ -147,8 +149,11 @@ export function stabilize(
         back && back.parentId === kid.parentId && back.type === type(kid)
           ? back.position
           : besideNeighbor(kid, container, rects, neighbors, nextById);
-      const spot = findSlot(own, rects, origin, maxRight, anchor);
-      rects.set(kid.id, { ...spot, ...own });
+      taken ??= new Occupied(rects.values());
+      const spot = findSlot(own, taken, origin, maxRight, anchor);
+      const rect = { ...spot, ...own };
+      rects.set(kid.id, rect);
+      taken.add(rect);
     }
     for (const [id, r] of rects) position.set(id, { x: r.x, y: r.y });
     if (parent) size.set(parent.id, fitFrame(parent, rects.values()));
@@ -184,60 +189,138 @@ function besideNeighbor(
   return undefined;
 }
 
+/** Side of the buckets of {@link Occupied}, about one card. */
+const BUCKET = 256;
+/** A box spanning more buckets than this is checked against every query. */
+const WIDE = 256;
+
+/**
+ * The boxes already placed in a container, kept in buckets of a fixed grid:
+ * finding out whether a place is free compares it with the boxes of a few
+ * buckets, not with every sibling, so placing hundreds of new nodes at once
+ * stays fast. It only grows while a container is being placed.
+ */
+class Occupied {
+  private readonly buckets = new Map<string, Rect[]>();
+  private readonly wide: Rect[] = [];
+  /** The right edge of the rightmost box, for the reading order. */
+  right = -Infinity;
+  /**
+   * Per box size and number of columns, the first cell of the reading order
+   * that may still be free: cells only fill up, so the scan resumes there.
+   */
+  readonly resume = new Map<string, number>();
+
+  constructor(rects: Iterable<Rect>) {
+    for (const rect of rects) this.add(rect);
+  }
+
+  add(rect: Rect) {
+    this.right = Math.max(this.right, rect.x + rect.width);
+    const [x0, x1, y0, y1] = span(rect, 0);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > WIDE) {
+      this.wide.push(rect);
+      return;
+    }
+    for (let bx = x0; bx <= x1; bx++)
+      for (let by = y0; by <= y1; by++) {
+        const key = `${bx}:${by}`;
+        const list = this.buckets.get(key);
+        if (list) list.push(rect);
+        else this.buckets.set(key, [rect]);
+      }
+  }
+
+  /** Whether `rect` comes closer than MARGIN to a placed box. */
+  collides(rect: Rect): boolean {
+    if (this.wide.some((other) => overlaps(rect, other, MARGIN))) return true;
+    const [x0, x1, y0, y1] = span(rect, MARGIN);
+    for (let bx = x0; bx <= x1; bx++)
+      for (let by = y0; by <= y1; by++) {
+        const list = this.buckets.get(`${bx}:${by}`);
+        if (list?.some((other) => overlaps(rect, other, MARGIN))) return true;
+      }
+    return false;
+  }
+}
+
+/** The buckets a box covers, widened by `margin` on every side. */
+function span(rect: Rect, margin: number): [number, number, number, number] {
+  return [
+    Math.floor((rect.x - margin) / BUCKET),
+    Math.floor((rect.x + rect.width + margin) / BUCKET),
+    Math.floor((rect.y - margin) / BUCKET),
+    Math.floor((rect.y + rect.height + margin) / BUCKET),
+  ];
+}
+
+const RINGS = 24;
+/**
+ * The cells around an anchor, ring by ring: in each ring below before
+ * above, then the closest first. The same for every search, so it is
+ * computed once.
+ */
+const ringCells: [number, number][][] = Array.from(
+  { length: RINGS + 1 },
+  (_, ring) => {
+    const cells: [number, number][] = [];
+    for (let j = -ring; j <= ring; j++)
+      for (let i = -ring; i <= ring; i++)
+        if (Math.max(Math.abs(i), Math.abs(j)) === ring) cells.push([i, j]);
+    return cells.sort(
+      ([ai, aj], [bi, bj]) =>
+        Number(aj < 0) - Number(bj < 0) ||
+        Math.abs(ai) + Math.abs(aj) - Math.abs(bi) - Math.abs(bj) ||
+        Math.abs(ai) - Math.abs(bi) ||
+        aj - bj ||
+        ai - bi,
+    );
+  },
+);
+
 /**
  * A free place for a box of `size`: around `anchor` (closest rings first,
  * below before above), or else the first free cell in reading order.
  */
-export function findSlot(
+function findSlot(
   size: Size,
-  rects: Map<string, Rect>,
+  taken: Occupied,
   origin: Point,
   maxRight: number,
   anchor?: Point,
 ): Point {
-  const taken = [...rects.values()];
   const stepX = size.width + GAP.x,
     stepY = size.height + GAP.y;
   const fits = (x: number, y: number) =>
     x >= origin.x &&
     y >= origin.y &&
     (x + size.width <= maxRight || x === origin.x) &&
-    !taken.some((r) => overlaps({ x, y, ...size }, r, MARGIN));
+    !taken.collides({ x, y, ...size });
   if (anchor) {
     const start = {
       x: Math.max(origin.x, anchor.x),
       y: Math.max(origin.y, anchor.y),
     };
-    for (let ring = 0; ring <= 24; ring++) {
-      const cells: [number, number][] = [];
-      for (let j = -ring; j <= ring; j++)
-        for (let i = -ring; i <= ring; i++)
-          if (Math.max(Math.abs(i), Math.abs(j)) === ring) cells.push([i, j]);
-      cells.sort(
-        ([ai, aj], [bi, bj]) =>
-          Number(aj < 0) - Number(bj < 0) ||
-          Math.abs(ai) + Math.abs(aj) - Math.abs(bi) - Math.abs(bj) ||
-          Math.abs(ai) - Math.abs(bi) ||
-          aj - bj ||
-          ai - bi,
-      );
+    for (const cells of ringCells)
       for (const [i, j] of cells) {
         const x = start.x + i * stepX,
           y = start.y + j * stepY;
         if (fits(x, y)) return { x, y };
       }
-    }
   }
   const right = Number.isFinite(maxRight)
     ? maxRight
-    : Math.max(origin.x + size.width, ...taken.map((r) => r.x + r.width));
+    : Math.max(origin.x + size.width, taken.right);
   const columns = Math.max(1, Math.floor((right - origin.x + GAP.x) / stepX));
-  for (let row = 0; ; row++)
-    for (let col = 0; col < columns; col++) {
-      const x = origin.x + col * stepX,
-        y = origin.y + row * stepY;
-      if (fits(x, y)) return { x, y };
+  const key = `${size.width}x${size.height}:${columns}`;
+  for (let cell = taken.resume.get(key) ?? 0; ; cell++) {
+    const x = origin.x + (cell % columns) * stepX,
+      y = origin.y + Math.floor(cell / columns) * stepY;
+    if (fits(x, y)) {
+      taken.resume.set(key, cell + 1);
+      return { x, y };
     }
+  }
 }
 
 /**
