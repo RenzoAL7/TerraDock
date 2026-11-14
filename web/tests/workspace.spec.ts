@@ -1137,6 +1137,54 @@ test("crear un recurso desde el diagrama lo escribe en el archivo, lo selecciona
   expect(await readFile(file, "utf8")).toBe(localSource);
 });
 
+test("deshacer mientras el autoguardado del recurso está en curso no deja el bloque en el disco", async ({
+  page,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  // Hold the first save of the new block until undo has been pressed.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let saving = () => {};
+  const started = new Promise<void>((resolve) => (saving = resolve));
+  let first = true;
+  let saves = 0;
+  page.on("response", (response) => {
+    if (response.url().endsWith("/api/files")) saves++;
+  });
+  await page.route("**/api/files", async (route) => {
+    if (route.request().method() === "PUT" && first) {
+      first = false;
+      saving();
+      await held;
+    }
+    await route.continue();
+  });
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Crear recurso" });
+  await dialog.getByRole("button", { name: /^Subred/ }).click();
+  await dialog.getByLabel("Nombre", { exact: true }).fill("db");
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await started;
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Se añadió aws_subnet.db al final de main.tf." })
+    .getByRole("button", { name: "Deshacer" })
+    .click();
+  release();
+  // The held save writes the block; the undo is saved right after it.
+  await expect.poll(() => saves).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => readFile(file, "utf8")).toBe(localSource);
+  await expect(page.getByTestId("node-aws_subnet.db")).toHaveCount(0);
+  await expect(page.getByTestId("sync-status")).toHaveText(
+    "Sincronizado con el archivo",
+  );
+});
+
 test("crear un recurso con un borrador abierto lo añade al borrador, no al disco", async ({
   page,
   request,

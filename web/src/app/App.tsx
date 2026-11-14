@@ -172,6 +172,8 @@ export default function App() {
   // Our own save reaches this tab over SSE before its HTTP response; until
   // then the draft looks based on an old revision but is not a conflict.
   const [savingPath, setSavingPath] = useState("");
+  // The save in flight, for actions that must run after it lands.
+  const inFlight = useRef<{ path: string; done: Promise<void> } | null>(null);
   // One save at a time; one asked for meanwhile waits instead of vanishing.
   const [waitingSaves, setWaitingSaves] = useState<readonly string[]>([]);
   const [saveQueue] = useState(() => new SaveQueue(setWaitingSaves));
@@ -188,6 +190,11 @@ export default function App() {
       )
         return;
       setSavingPath(path);
+      let finish = () => {};
+      inFlight.current = {
+        path,
+        done: new Promise<void>((resolve) => (finish = resolve)),
+      };
       try {
         const next = await perform(() =>
           api.save(
@@ -211,6 +218,8 @@ export default function App() {
           setDrafts(draftsRef.current);
         }
       } finally {
+        finish();
+        inFlight.current = null;
         setSavingPath("");
       }
     },
@@ -604,8 +613,16 @@ export default function App() {
     }
   };
   /** Remove the block just created, if the file still ends exactly with it. */
-  const undoCreate = (entry: Created) => {
+  const undoCreate = async (entry: Created) => {
     setCreated(null);
+    // An autosave of the block may be in flight: undo on top of what it
+    // writes, or it would land after the undo and keep the block on disk.
+    for (
+      let save = inFlight.current;
+      save?.path === entry.path;
+      save = inFlight.current
+    )
+      await save.done;
     const current = projectRef.current;
     const saved = current?.files.find((f) => f.path === entry.path);
     if (!current || !saved || entry.before === null) return;
@@ -927,7 +944,7 @@ export default function App() {
               : `Se añadió ${created.id} al final de ${created.path}.`}
           </span>
           {created.before !== null && (
-            <button onClick={() => undoCreate(created)}>Deshacer</button>
+            <button onClick={() => void undoCreate(created)}>Deshacer</button>
           )}
           <button aria-label="Cerrar aviso" onClick={() => setCreated(null)}>
             <X size={15} />
