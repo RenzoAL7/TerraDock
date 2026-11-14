@@ -134,7 +134,8 @@ func declaredIn(files map[string]string, resourceType, name string) string {
 	}
 	sort.Strings(names)
 	for _, file := range names {
-		if !strings.HasSuffix(file, ".tf") || !strings.Contains(files[file], name) {
+		// Labels are compared once parsed: "m\u0061in" declares "main".
+		if !strings.HasSuffix(file, ".tf") {
 			continue
 		}
 		parsed, _ := hclsyntax.ParseConfig([]byte(files[file]), file, hcl.InitialPos)

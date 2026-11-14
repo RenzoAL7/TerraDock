@@ -85,10 +85,12 @@ func TestInsertResourceRejectsDuplicates(t *testing.T) {
 		"main.tf":    "resource \"aws_vpc\" \"main\" {}\n",
 		"network.tf": "\n\nresource \"aws_subnet\" \"app\" {}\n",
 		"data.tf":    "data \"aws_subnet\" \"db\" {}\n",
+		"escaped.tf": "resource \"aws_s3_bucket\" \"l\\u006fgs\" {}\n",
 	}
 	for _, tt := range []struct{ name, kind, where string }{
 		{"same file", "aws_vpc.main", "main.tf:1"},
 		{"another file", "aws_subnet.app", "network.tf:3"},
+		{"escaped label", "aws_s3_bucket.logs", "escaped.tf:1"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			parts := strings.SplitN(tt.kind, ".", 2)
