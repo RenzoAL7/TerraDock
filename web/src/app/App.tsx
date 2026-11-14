@@ -63,6 +63,9 @@ import {
 } from "../features/create/CreateResourceDialog";
 import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
+import { download } from "../lib/download";
+import layoutLicensesUrl from "../features/architecture/layout/layout-licenses.txt?url&no-inline";
+import fontLicensesUrl from "../landing/font-licenses.txt?url&no-inline";
 import { ApiError, api, errorMessage, liveApi } from "../lib/api";
 import type {
   Draft,
@@ -115,16 +118,6 @@ function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
   delete next[key];
   return next;
-}
-function download(name: string, content: string) {
-  const url = URL.createObjectURL(
-    new Blob([content], { type: "text/plain;charset=utf-8" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default function App() {
@@ -1211,6 +1204,14 @@ export default function App() {
                 created={placeId}
                 onPlaced={placed}
                 marks={marks}
+                projectName={project.name}
+                unsavedFiles={
+                  live.live
+                    ? Object.values(drafts).filter(
+                        (d) => d.projectId === project.id,
+                      ).length
+                    : 0
+                }
                 onCreate={() => {
                   setCreateError("");
                   setCreating(true);
@@ -1520,6 +1521,17 @@ export default function App() {
             <p className="field-note">
               Los borradores abiertos en esta pestaña se siguen guardando
               mientras la tengas abierta.
+            </p>
+            <p className="field-note help-licenses">
+              Avisos de terceros incluidos:{" "}
+              <a href={layoutLicensesUrl} target="_blank" rel="noreferrer">
+                licencias del ordenado del diagrama (dagre, graphlib)
+              </a>{" "}
+              y{" "}
+              <a href={fontLicensesUrl} target="_blank" rel="noreferrer">
+                licencias de fuentes
+              </a>
+              .
             </p>
           </div>
         </Dialog>

@@ -14,46 +14,44 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import {
-  Box,
-  Database,
-  Globe2,
-  Layers3,
-  LogOut,
+  Download,
   Maximize,
   Minus,
   Network,
-  Plug,
   Plus,
   Repeat2,
-  Route,
-  Server,
-  ShieldCheck,
-  Sigma,
-  SlidersHorizontal,
   Workflow,
 } from "lucide-react";
 import type { Resource, ResourceEdge } from "../../lib/types";
-import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import {
   buildGraph,
-  keepPositions,
+  cardDetail,
   nodeSignature,
+  repeatMark,
+  scopeMeta,
   shortType,
   type ResourceNode,
 } from "./graph";
+import { iconFor, markStyle } from "./diagramIcons";
 import type { DeployMark } from "../deploy/useFloci";
+import { exportDiagram, type ExportFormat } from "./rasterize";
+import { download } from "../../lib/download";
+import { placeUpdate, type Remembered } from "./layout/stable";
 
-const markLabel: Record<DeployMark, string> = {
-  create: "+ crear",
-  update: "~ actualizar",
-  replace: "± reemplazar",
-  delete: "− eliminar",
-  deployed: "✓ en Floci",
-};
+/**
+ * The places of the last project shown, kept while the diagram is unmounted
+ * (code and analysis views) so coming back does not move anything.
+ */
+let remembered: {
+  projectKey: string;
+  nodes: ResourceNode[];
+  removed: Remembered;
+} | null = null;
+
 function NodeMark({ mark }: { mark?: DeployMark }) {
   return mark ? (
     <span className={`deploy-mark mark-${mark}`} data-testid="deploy-mark">
-      {markLabel[mark]}
+      {markStyle[mark].label}
     </span>
   ) : null;
 }
@@ -83,69 +81,24 @@ export function ResourceIcon({
   resource: Resource;
   size?: number;
 }) {
-  const Icon =
-    resource.type === "aws_internet_gateway"
-      ? Globe2
-      : resource.type.includes("route")
-        ? Route
-        : {
-            network: Network,
-            compute: Server,
-            security: ShieldCheck,
-            database: Database,
-            storage: Box,
-            loadbalancer: Workflow,
-            variable: SlidersHorizontal,
-            local: Sigma,
-            output: LogOut,
-            provider: Plug,
-            other: Layers3,
-          }[resource.category] || Layers3;
+  const { Icon } = iconFor(resource);
   return <Icon size={size} strokeWidth={1.65} />;
 }
 
-/** The one value a card shows under its name, by kind of declaration. */
-const detailProperties: Partial<Record<Resource["block"], string[]>> = {
-  variable: ["default", "type"],
-  local: ["value"],
-  output: ["value"],
-  provider: ["region"],
-};
-
-/**
- * count / for_each blocks are declarations, not expanded instances: say so on
- * the card instead of drawing a guessed number of copies.
- */
 function RepeatMark({ resource }: { resource: Resource }) {
-  const p = resource.properties.find(
-    (p) => p.name === "count" || p.name === "for_each",
-  );
-  if (!p) return null;
-  const text =
-    p.name === "count" ? `× ${String(p.value ?? p.expression)}` : `for_each`;
+  const mark = repeatMark(resource);
+  if (!mark) return null;
   return (
-    <span
-      className="repeat-mark"
-      data-testid="repeat-mark"
-      title={`${p.name} = ${p.expression}. Se muestra el bloque declarado, sin expandir sus instancias.`}
-    >
+    <span className="repeat-mark" data-testid="repeat-mark" title={mark.title}>
       <Repeat2 size={11} />
-      {text}
+      {mark.text}
     </span>
   );
 }
 
 function ResourceCard({ data }: NodeProps<ResourceNode>) {
   const r = data.resource;
-  const names = detailProperties[r.block] ?? [
-    "instance_type",
-    "engine",
-    "bucket_prefix",
-    "internal",
-  ];
-  const p = names
-    .map((name) => r.properties.find((p) => p.name === name))
-    .find(Boolean);
+  const icon = iconFor(r);
   return (
     <div
       className={`resource-node ${r.category} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
@@ -153,7 +106,10 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
     >
       <Handle type="target" position={Position.Top} />
       <div className="node-heading">
-        <span className="resource-icon">
+        <span
+          className="resource-icon"
+          style={{ color: icon.color, background: icon.background }}
+        >
           <ResourceIcon resource={r} />
         </span>
         <span className="node-kind">{shortType(r.type)}</span>
@@ -162,13 +118,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
         {!data.mark && <span className="node-dot" />}
       </div>
       <strong title={r.id}>{r.label || r.name}</strong>
-      <span className="node-detail">
-        {p
-          ? hidesValue(r, p)
-            ? SENSITIVE_TEXT
-            : String(p.value ?? p.expression).replaceAll('"', "")
-          : r.file}
-      </span>
+      <span className="node-detail">{cardDetail(r)}</span>
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
@@ -176,8 +126,7 @@ function ResourceCard({ data }: NodeProps<ResourceNode>) {
 
 function ScopeCard({ data }: NodeProps<ResourceNode>) {
   const r = data.resource;
-  const cidr = r.properties.find((p) => p.name === "cidr_block"),
-    az = r.properties.find((p) => p.name === "availability_zone");
+  const [cidr, detail] = scopeMeta(r, data.childCount);
   return (
     <div
       className={`scope-node ${r.type === "aws_vpc" ? "vpc-scope" : "subnet-scope"} ${data.muted ? "is-muted" : ""} ${data.updated ? "is-updated" : ""}`}
@@ -194,12 +143,8 @@ function ScopeCard({ data }: NodeProps<ResourceNode>) {
         <NodeMark mark={data.mark as DeployMark | undefined} />
       </div>
       <div className="scope-meta">
-        <span>{String(cidr?.value ?? cidr?.expression ?? "")}</span>
-        <span>
-          {az
-            ? String(az.value ?? az.expression)
-            : `${data.childCount} recursos`}
-        </span>
+        <span>{cidr}</span>
+        <span>{detail}</span>
       </div>
       {!data.childCount && (
         <span className="empty-scope">Sin recursos asociados</span>
@@ -216,17 +161,28 @@ interface Props {
   selected: string;
   query: string;
   onSelect: (id: string) => void;
+  /** Changes with the project or the view: refits the viewport, moves nothing. */
   resetKey: string;
   marks?: Record<string, DeployMark>;
   focus?: { id: string; n: number };
   /** Opens the "create resource" dialog (button and right click on the canvas). */
   onCreate?: () => void;
-  /** Identity of the project: a different one is laid out from scratch. */
+  /**
+   * Identity of the project (its id): a different one is laid out from
+   * scratch, the only time the layout runs by itself.
+   */
   project?: string;
-  /** A resource this client just created, placed beside the diagram. */
+  /**
+   * A resource this client just created. stabilize() places it like any new
+   * node, next to its first neighbor; the app then centers it.
+   */
   created?: string;
-  /** The created resource is on the canvas: stop placing it. */
+  /** The created resource is on the canvas. */
   onPlaced?: (id: string) => void;
+  /** Named in the band of SVG/PNG exports. */
+  projectName?: string;
+  /** Files with unsaved drafts that the diagram reflects. */
+  unsavedFiles?: number;
 }
 function Graph({
   resources,
@@ -238,14 +194,62 @@ function Graph({
   marks,
   focus,
   onCreate,
-  project = "",
+  project: projectKey = "",
   created = "",
   onPlaced,
+  projectName = "Proyecto",
+  unsavedFiles = 0,
 }: Props) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>(
+    remembered?.projectKey === projectKey ? remembered.nodes : [],
+  );
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView, zoomIn, zoomOut, getInternalNode, getZoom, setCenter } =
-    useReactFlow();
+  const {
+    fitView,
+    zoomIn,
+    zoomOut,
+    getInternalNode,
+    getZoom,
+    setCenter,
+    getNodes,
+    getEdges,
+  } = useReactFlow<ResourceNode>();
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState("");
+  const [exportError, setExportError] = useState("");
+  // From the model, not the DOM: with more than 150 resources only the
+  // visible nodes are rendered.
+  const exportAs = async (format: ExportFormat) => {
+    setExportOpen(false);
+    setExportError("");
+    setExporting(format);
+    try {
+      const { blob, name } = await exportDiagram(format, {
+        nodes: getNodes(),
+        edges: getEdges(),
+        caption: {
+          project: projectName,
+          date: new Intl.DateTimeFormat("es", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(new Date()),
+          resources: resources.length,
+          filter: query.trim() || undefined,
+          drafts: unsavedFiles,
+        },
+      });
+      download(name, blob);
+    } catch (error) {
+      // The browser's own message is technical and in English: it goes to
+      // the console, the interface says what happened.
+      console.error("No se pudo exportar el diagrama", error);
+      setExportError(
+        "No se pudo exportar el diagrama. El detalle está en la consola del navegador.",
+      );
+    } finally {
+      setExporting("");
+    }
+  };
   // Center on resources chosen outside the canvas (explorer, editor caret,
   // inspector references), even in large diagrams that only render what is
   // visible. `focus.n` changes on every request, including repeated ones.
@@ -299,42 +303,35 @@ function Graph({
       })),
     [marks, updated],
   );
-  const layout = useCallback(() => {
-    const graph = buildGraph(resources, relations, selected, query);
-    setNodes(decorate(graph.nodes));
-    setEdges(graph.edges);
-  }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
-  // Live edits rebuild the graph on every keystroke. Reusing the previous node
-  // object when nothing visible changed lets React Flow skip re-rendering it,
-  // which keeps large diagrams responsive.
+  // Reusing the previous node object when nothing visible changed and it did
+  // not move lets React Flow skip re-rendering it, which keeps large diagrams
+  // responsive while typing.
   const nodeKeys = useRef(new Map<string, string>());
-  const laidOut = useRef(project);
-  useEffect(() => {
-    const graph = buildGraph(resources, relations, selected, query);
-    // Another project gets a full layout instead of the old positions.
-    const fresh = laidOut.current !== project;
-    laidOut.current = project;
-    setNodes((previous) => {
-      const next = decorate(graph.nodes);
-      const keys = new Map(next.map((node) => [node.id, nodeKey(node)]));
-      const merged = fresh
-        ? next
-        : keepPositions(
-            previous,
-            next,
-            (node) => nodeKeys.current.get(node.id) === keys.get(node.id),
-            created,
-          );
+  const reuse = useCallback(
+    (previous: ResourceNode[], placed: ResourceNode[]) => {
+      const byId = new Map(previous.map((n) => [n.id, n]));
+      const keys = new Map<string, string>();
+      const next = placed.map((node) => {
+        const key = nodeKey(node);
+        keys.set(node.id, key);
+        const old = byId.get(node.id);
+        return old &&
+          nodeKeys.current.get(node.id) === key &&
+          old.position.x === node.position.x &&
+          old.position.y === node.position.y
+          ? old
+          : node;
+      });
       nodeKeys.current = keys;
-      return merged;
-    });
-    setEdges((previous) =>
-      sameEdges(previous, graph.edges) ? previous : graph.edges,
-    );
-    // Placed once: later it keeps its position like any other node, and a
-    // block with the same name typed later is laid out normally.
-    if (created && graph.nodes.some((node) => node.id === created))
-      onPlaced?.(created);
+      return next;
+    },
+    [],
+  );
+  // "Ordenar": the full layered layout, on demand.
+  const layout = useCallback(() => {
+    const graph = buildGraph(resources, relations, selected, query, "layered");
+    setNodes((previous) => reuse(previous, decorate(graph.nodes)));
+    setEdges(graph.edges);
   }, [
     resources,
     relations,
@@ -343,10 +340,66 @@ function Graph({
     setNodes,
     setEdges,
     decorate,
-    project,
+    reuse,
+  ]);
+  // The full layout runs once per project. After that, every update (typing,
+  // the inspector, a file changed on disk, switching views) keeps the places
+  // and only fits new nodes in: stabilize() never lays everything out again.
+  // Only an update that brings mostly new nodes is laid out again.
+  const laidOut = useRef(
+    remembered?.projectKey === projectKey ? projectKey : "",
+  );
+  const forgotten = useRef<Remembered>(
+    remembered?.projectKey === projectKey ? remembered.removed : new Map(),
+  );
+  useEffect(() => {
+    const full = laidOut.current !== projectKey;
+    if (full) forgotten.current = new Map();
+    if (full && resources.length) laidOut.current = projectKey;
+    const graph = buildGraph(
+      resources,
+      relations,
+      selected,
+      query,
+      full ? "layered" : "grid",
+    );
+    setNodes((previous) => {
+      if (full) return reuse(previous, decorate(graph.nodes));
+      // Keep the places; only mostly new nodes (another branch, a large file
+      // pasted) are laid out from scratch. Removed nodes are remembered.
+      const placed = placeUpdate(
+        previous,
+        graph.nodes,
+        graph.edges,
+        forgotten.current,
+      );
+      return reuse(previous, decorate(placed));
+    });
+    setEdges((previous) =>
+      sameEdges(previous, graph.edges) ? previous : graph.edges,
+    );
+    // The created resource went next to its first neighbor like any new
+    // node; from now on it keeps its place like the rest.
+    if (created && graph.nodes.some((node) => node.id === created))
+      onPlaced?.(created);
+  }, [
+    resources,
+    relations,
+    selected,
+    query,
+    projectKey,
     created,
     onPlaced,
+    setNodes,
+    setEdges,
+    decorate,
+    reuse,
   ]);
+  // Leaving the diagram (the code view unmounts it) and coming back keeps
+  // the places of the same project.
+  useEffect(() => {
+    remembered = { projectKey, nodes, removed: forgotten.current };
+  }, [projectKey, nodes]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fitView({ padding: 0.1, duration: 250 });
@@ -446,7 +499,43 @@ function Graph({
         >
           <Workflow size={15} /> Ordenar
         </button>
+        <button
+          className="layout-button"
+          aria-haspopup="menu"
+          aria-expanded={exportOpen}
+          disabled={!resources.length || !!exporting}
+          title="Exportar el diagrama completo como imagen"
+          onClick={() => setExportOpen((open) => !open)}
+        >
+          <Download size={15} />{" "}
+          {exporting ? `Exportando ${exporting.toUpperCase()}…` : "Exportar"}
+        </button>
+        {exportOpen && (
+          <div
+            className="export-menu"
+            role="menu"
+            aria-label="Formato de exportación"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setExportOpen(false);
+            }}
+          >
+            <button role="menuitem" onClick={() => void exportAs("svg")}>
+              SVG <span>vectorial, con fuentes</span>
+            </button>
+            <button role="menuitem" onClick={() => void exportAs("png")}>
+              PNG <span>imagen a 2×</span>
+            </button>
+          </div>
+        )}
       </div>
+      {exportError && (
+        <div className="export-error" role="alert">
+          {exportError}
+          <button aria-label="Cerrar aviso" onClick={() => setExportError("")}>
+            ×
+          </button>
+        </div>
+      )}
       <div className="canvas-legend">
         <span>
           <i className="legend-containment" /> Agrupación

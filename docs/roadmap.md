@@ -36,7 +36,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Flujo principal: iniciar programa → navegador local → Abrir carpeta → código y arquitectura → editar → guardar → sincronizar.
 - [ ] Un proyecto activo por sesión al principio; proyectos recientes para cambiar de carpeta.
 - [x] Selector de carpetas dentro de la interfaz, respaldado por Go, con opción de pegar una ruta.
-- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco y React Flow. El diagrama coloca los nodos en una rejilla fija; un motor de layout automático queda pendiente para cuando sea necesario.
+- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco y React Flow. El diagrama se ordena por capas con dagre al abrir el proyecto y con «Ordenar»; mientras se edita, cada nodo conserva su sitio.
 - [x] Definir la política de guardado. Decisión: cambios en vivo y autoguardado de borradores con HCL válido (desactivable), además de Guardar/Ctrl-S/Cmd-S. El diagrama refleja el borrador y los borradores se indican explícitamente.
 - [ ] Diseñar pantalla inicial, explorador, pestañas, vista dividida, inspector, panel de problemas y estados.
 - [ ] Definir por separado lectura de código, representación especializada y edición visual de propiedades.
@@ -81,7 +81,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Vistas Arquitectura, Código y Dividida.
 - [x] Navegación de nodo a declaración y de declaración a nodo. En la vista dividida, el cursor selecciona el recurso y el nodo resalta su bloque.
 - [x] Inspector con valor o expresión, ubicación de origen y motivo cuando una propiedad no es editable visualmente.
-- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y colocación en rejilla fija (sin layout automático).
+- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y ordenado automático por capas (al abrir y con «Ordenar»), sin recolocar lo existente al editar.
 - [x] Estados separados: borrador sin guardar, guardando, sincronizado, analizando, gráfico desactualizado y validación.
 - [x] Panel de problemas con archivo, línea y explicación.
 
@@ -150,14 +150,15 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 
 **Funcionalidades**
 
-- [ ] Agrupación por VPC, subnet y módulo cuando los datos permiten justificarla.
-- [ ] Vistas de arquitectura y dependencias con leyenda y dirección de las relaciones.
+- [ ] Agrupación por VPC, subnet y módulo cuando los datos permiten justificarla. Hecho: VPC y subnet, también al ordenar (cada contenedor se ordena por dentro y cuenta como un bloque para su padre). Pendiente: módulos.
+- [ ] Vistas de arquitectura y dependencias con leyenda y dirección de las relaciones. Hecho: la vista de arquitectura ordena las referencias de arriba abajo (dagre); con 300 y 1000 recursos de prueba, más del 90 % apuntan hacia abajo. Pendiente: vista de dependencias propia.
+- [x] Ordenado automático sin perder el sitio de lo existente: por capas al abrir y con «Ordenar»; al editar, renombrar o deshacer, los nodos conservan o recuperan su sitio y los nuevos van junto a su primer vecino.
 - [ ] Inspeccionar por qué existe una relación y qué atributo la origina.
 - [ ] Colapsar grupos, filtrar recursos y centrar resultados.
 - [ ] Guardar posiciones y preferencias separadas del código Terraform.
 - [ ] Mostrar dependencias directas y transitivas como relaciones potencialmente relevantes, sin afirmar cambios de despliegue.
 - [ ] Comparar con una instantánea de configuración elegida: bloques agregados, eliminados y modificados.
-- [ ] Exportar el gráfico a SVG o PNG con vista y alcance identificados.
+- [x] Exportar el gráfico a SVG o PNG con vista y alcance identificados. La banda del archivo nombra proyecto, fecha, número de recursos, filtro activo y borradores sin guardar; se genera desde el modelo, así que incluye los nodos fuera de pantalla.
 
 **Terminado cuando:** los ejemplos de red y aplicación web se entienden sin una maraña de conexiones; las relaciones tienen evidencia; los filtros no hacen pasar un gráfico parcial por completo.
 
@@ -237,7 +238,7 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 - [ ] Documentación de compatibilidad, limitaciones, solución de problemas y recuperación.
 - [ ] CI y regresiones de parser, escritor, sincronización, interfaz, planes y reglas. Existe CI con pruebas Go, unitarias, de navegador y de la portada, imágenes ARM64 con promoción automática y monitor del sitio; faltan las regresiones de planes importados.
 - [ ] Pruebas en máquinas limpias y sesiones con usuarios distintos del autor.
-- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales. Medido en una MacBook ARM con Chromium: p95 de 50–159 ms con 300 recursos según el camino ([rendimiento](performance.md)). Faltan otras máquinas, la apertura y la navegación.
+- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales. Medido en una MacBook ARM con Chromium: mediana de 59–242 ms con 300 recursos según el camino; el inspector es el más lento ([rendimiento](performance.md)). Faltan otras máquinas, la apertura y la navegación.
 - [ ] Cero incidencias conocidas de pérdida de datos y cero bloqueos abiertos en los flujos de lanzamiento.
 
 **Terminado cuando:** una persona instala la versión publicada, abre un proyecto compatible, completa los flujos principales, cierra y vuelve a abrir sin asistencia del autor. La evidencia de pruebas y la matriz de soporte acompañan la publicación.
