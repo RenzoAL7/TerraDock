@@ -207,26 +207,50 @@ func validNewFileName(name string) bool {
 			return false
 		}
 	}
-	return filepath.Base(name) == name
+	stem, _, _ := strings.Cut(strings.ToLower(name), ".")
+	return !windowsReserved(stem) && filepath.IsLocal(name) && filepath.Base(name) == name
+}
+
+// windowsReserved reports device names Windows reserves with any extension
+// (nul.tf is the NUL device there), rejected on every system so a project
+// stays portable.
+func windowsReserved(stem string) bool {
+	switch stem {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(stem) == 4 && (strings.HasPrefix(stem, "com") || strings.HasPrefix(stem, "lpt")) && stem[3] >= '0' && stem[3] <= '9'
 }
 
 // createFile writes a file that must not exist yet, inside the confined
-// project directory. O_EXCL makes creation fail instead of replacing a file
-// (or following a symlink) that appeared since the project was read.
+// project directory. It works through an os.Root of that directory, so a
+// directory swapped for a symlink after the check cannot redirect the write,
+// and O_EXCL makes creation fail instead of replacing a file (or following a
+// symlink) that appeared since the project was read. The new file takes the
+// permissions of the first .tf next to it, or 0644.
 func createFile(root, dir, name, content string) error {
 	safe, err := safePath(root, dir)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(safe, name)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	folder, err := os.OpenRoot(safe)
+	if err != nil {
+		return problem("io_error", "No se puede abrir la carpeta del proyecto.")
+	}
+	defer folder.Close()
+	perm := neighbourPerm(folder)
+	f, err := folder.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return problem("file_exists", "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.")
 		}
 		return problem("io_error", "No se puede crear el archivo.")
 	}
-	_, err = io.WriteString(f, content)
+	// The umask may have narrowed the mode; match the neighbour exactly.
+	err = f.Chmod(perm)
+	if err == nil {
+		_, err = io.WriteString(f, content)
+	}
 	if err == nil {
 		err = f.Sync()
 	}
@@ -234,10 +258,32 @@ func createFile(root, dir, name, content string) error {
 		err = closeErr
 	}
 	if err != nil {
-		_ = os.Remove(path)
+		_ = folder.Remove(name)
 		return problem("io_error", "No se puede escribir el archivo nuevo.")
 	}
 	return nil
+}
+
+func neighbourPerm(folder *os.Root) fs.FileMode {
+	dir, err := folder.Open(".")
+	if err != nil {
+		return 0o644
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return 0o644
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".tf") {
+			continue
+		}
+		if info, err := entry.Info(); err == nil {
+			return info.Mode().Perm()
+		}
+	}
+	return 0o644
 }
 
 func fingerprint(files map[string]string) string {

@@ -85,6 +85,10 @@ func TestCreateResourceFileWritesANewFileOnly(t *testing.T) {
 	if err != nil || !strings.HasPrefix(string(disk), `resource "aws_instance" "web" {`) {
 		t.Fatalf("new file not written: %q, %v", disk, err)
 	}
+	// Same permissions as the .tf next to it (main.tf is 0640), whatever the umask.
+	if info, err := os.Stat(filepath.Join(project, "compute.tf")); err != nil || info.Mode().Perm() != 0640 {
+		t.Fatalf("new file permissions differ from its neighbour: %v, %v", info.Mode(), err)
+	}
 	if main, _ := os.ReadFile(filepath.Join(project, "main.tf")); string(main) != networkSource {
 		t.Fatal("creating a file changed another file")
 	}
@@ -114,7 +118,8 @@ func TestCreateResourceFileWritesANewFileOnly(t *testing.T) {
 func TestCreateResourceFileStaysInsideTheProject(t *testing.T) {
 	m, project, initial := localProject(t)
 	root := filepath.Dir(project)
-	for _, name := range []string{"../outside.tf", "sub/x.tf", `..\x.tf`, "/tmp/x.tf", ".hidden.tf", "x.tf.json", "x.txt", ".tf", "a b.tf", "", "-x.tf"} {
+	for _, name := range []string{"../outside.tf", "sub/x.tf", `..\x.tf`, "/tmp/x.tf", ".hidden.tf", "x.tf.json", "x.txt", ".tf", "a b.tf", "", "-x.tf",
+		"nul.tf", "NUL.tf", "con.tf", "Aux.tf", "prn.backup.tf", "com1.tf", "LPT9.tf", "com0.tf"} {
 		_, err := m.CreateResourceFile(initial.ID, name, instanceSpec("web"))
 		errorCode(t, err, "invalid_path")
 	}
@@ -130,6 +135,14 @@ func TestCreateResourceFileStaysInsideTheProject(t *testing.T) {
 	errorCode(t, err, "file_exists")
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatal("creation followed a symlink out of the project")
+	}
+}
+
+func TestNewFileNamesAcceptPortableNamesOnly(t *testing.T) {
+	for _, name := range []string{"main.tf", "a.tf", "net-work_2.tf", "console.tf", "nullable.tf", "com10.tf", "lpt.tf"} {
+		if !validNewFileName(name) {
+			t.Errorf("%q should be accepted", name)
+		}
 	}
 }
 
