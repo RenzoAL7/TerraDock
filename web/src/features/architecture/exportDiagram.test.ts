@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Property, Resource, ResourceEdge } from "../../lib/types";
 import { buildGraph } from "./graph";
 import { diagramToSvg, type ExportCaption } from "./exportDiagram";
@@ -315,6 +315,20 @@ describe("diagram icons", () => {
         }),
       );
       expect(iconNodes(spec.Icon).length, category).toBeGreaterThan(0);
+    }
+  });
+
+  it("warns instead of failing silently when an icon has no readable shapes", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const Changed = { displayName: "Changed" } as unknown as Parameters<
+        typeof iconNodes
+      >[0];
+      expect(iconNodes(Changed)).toEqual([]);
+      expect(warn).toHaveBeenCalledOnce();
+      expect(String(warn.mock.calls[0][0])).toContain("Changed");
+    } finally {
+      warn.mockRestore();
     }
   });
 });

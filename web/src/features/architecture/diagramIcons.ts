@@ -125,7 +125,14 @@ export function iconNodes(Icon: LucideIcon): LucideIconNode[] {
       ) => { props?: { icon?: { node?: LucideIconNode[] } } };
     }
   ).render;
-  return render?.({}, null)?.props?.icon?.node ?? [];
+  const nodes = render?.({}, null)?.props?.icon?.node ?? [];
+  // Lucide's internals are not a public API: if they change, exports lose
+  // their icons; say so instead of failing silently.
+  if (!nodes.length)
+    console.warn(
+      `No se pudieron leer las formas del icono ${Icon.displayName ?? ""}: la exportación lo dibujará vacío.`,
+    );
+  return nodes;
 }
 
 const attribute = (name: string, value: unknown) =>

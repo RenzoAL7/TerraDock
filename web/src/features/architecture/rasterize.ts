@@ -24,7 +24,10 @@ export async function exportDiagram(
   return { blob: await svgToPng(svg, width, height), name };
 }
 
-/** Chromium refuses larger canvases; this keeps a PNG well under that. */
+/**
+ * Safari refuses canvases above 16,777,216 pixels (Chromium and Firefox
+ * allow more); a PNG never goes past it.
+ */
 export const MAX_PIXELS = 16_777_216;
 const MAX_SIDE = 16_384;
 

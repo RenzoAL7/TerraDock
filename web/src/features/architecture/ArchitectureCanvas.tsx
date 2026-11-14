@@ -241,10 +241,11 @@ function Graph({
       });
       download(name, blob);
     } catch (error) {
+      // The browser's own message is technical and in English: it goes to
+      // the console, the interface says what happened.
+      console.error("No se pudo exportar el diagrama", error);
       setExportError(
-        error instanceof Error
-          ? `No se pudo exportar: ${error.message}`
-          : "No se pudo exportar el diagrama.",
+        "No se pudo exportar el diagrama. El detalle está en la consola del navegador.",
       );
     } finally {
       setExporting("");
