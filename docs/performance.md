@@ -4,6 +4,34 @@ Objetivo: un cambio en archivo, código o inspector llega al diagrama en menos d
 1 s con 300 recursos. Lo comprueba la prueba e2e
 `con 300 recursos, archivo, código e inspector llegan al diagrama en menos de 1 s`.
 
+## Medición tras «exportar» y «ordenar» (2026-11-13, MacBook ARM, Chromium)
+
+Misma prueba e2e, tres corridas por versión (`--repeat-each=3`), sin otras
+pruebas de navegador en marcha. Mediana y, entre paréntesis, las tres corridas.
+La apertura es el tiempo desde pulsar «Abrir esta carpeta» hasta que el
+explorador y el diagrama muestran los 300 recursos; se midió con una prueba
+temporal que no forma parte del repositorio.
+
+| Camino          | `main` (42c73bc)         | `feat/exportar-y-ordenar` |
+| --------------- | -----------------------: | ------------------------: |
+| Archivo externo |     54 ms (54 · 53 · 56) |      59 ms (59 · 63 · 58) |
+| Inspector       | 238 ms (238 · 240 · 237) |  242 ms (241 · 250 · 242) |
+| Código          | 149 ms (142 · 152 · 149) |  153 ms (153 · 158 · 152) |
+| Apertura        | 128 ms (128 · 122 · 152) |  154 ms (160 · 154 · 140) |
+
+La rama queda 4–5 ms por encima en los tres caminos. La causa no es el trabajo
+por actualización, sino lo que se ve: la prueba centra el nodo con zoom 0,75 y
+el orden por capas es más compacto que la cuadrícula, así que en pantalla hay
+18 nodos y 6 aristas en vez de 8 y 2. Con ocho cambios seguidos del archivo
+sobre la misma vista, la mediana es la misma en las dos versiones (70–72 ms).
+En Node, `stabilize` tarda 0,5 ms con 300 recursos y 1,3 ms con 1000, y no
+recalcula el orden. La exportación sola (sin el orden por capas) no cambia
+estos caminos: en otra serie de cuatro corridas quedó a 1–3 ms de `main`.
+
+La apertura sube unos 25 ms: es la única vez, además de «Ordenar», que corre
+el orden por capas (6,4 ms en Node con 300 recursos y 25 ms con 1000). El
+resto de la diferencia no se aisló.
+
 ## Medición tras «crear desde el diagrama» (2026-11-13, MacBook ARM, Chromium)
 
 Misma prueba e2e, tres corridas por versión (`--repeat-each=3`), sin otras
