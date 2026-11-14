@@ -4,6 +4,7 @@ import {
   buildGraph,
   categoryNames,
   laneOf,
+  keepPositions,
   nodeSignature,
   placeAdded,
   shortType,
@@ -386,5 +387,45 @@ describe("placing added nodes", () => {
   it("leaves the layout alone when every node is new", () => {
     const { nodes } = buildGraph([resource("aws_vpc.main")], [], "");
     expect(placeAdded(nodes, new Set(["aws_vpc.main"]))).toBe(nodes);
+  });
+});
+
+describe("keeping positions across live edits", () => {
+  const layout = (ids: string[]) =>
+    buildGraph(
+      ids.map((id) => resource(id)),
+      [],
+      "",
+    ).nodes;
+  const moved = (nodes: ReturnType<typeof layout>) =>
+    nodes.map((n) => ({ ...n, position: { x: n.position.x + 7, y: 3 } }));
+  it("gives a renamed node its slot in the layout, not a new column", () => {
+    const before = moved(layout(["aws_vpc.main", "aws_s3_bucket.logs"]));
+    const next = layout(["aws_vpc.core", "aws_s3_bucket.logs"]);
+    const merged = keepPositions(before, next, () => false);
+    expect(merged.find((n) => n.id === "aws_vpc.core")!.position).toEqual(
+      next.find((n) => n.id === "aws_vpc.core")!.position,
+    );
+    // The untouched node keeps where it was on screen.
+    expect(merged.find((n) => n.id === "aws_s3_bucket.logs")!.position).toEqual(
+      before.find((n) => n.id === "aws_s3_bucket.logs")!.position,
+    );
+  });
+  it("moves only the resource this client created", () => {
+    const before = moved(layout(["aws_vpc.main"]));
+    const next = layout(["aws_vpc.edge", "aws_vpc.main", "aws_s3_bucket.x"]);
+    const merged = keepPositions(before, next, () => true, "aws_vpc.edge");
+    const main = before[0];
+    const edge = merged.find((n) => n.id === "aws_vpc.edge")!;
+    // Beside every other top-level node, not on top of one.
+    for (const n of merged.filter((n) => n !== edge && !n.parentId))
+      expect(edge.position.x).toBeGreaterThan(
+        n.position.x + Number(n.style!.width),
+      );
+    expect(merged.find((n) => n.id === "aws_s3_bucket.x")!.position).toEqual(
+      next.find((n) => n.id === "aws_s3_bucket.x")!.position,
+    );
+    // Unchanged nodes are the same objects, so React Flow skips them.
+    expect(merged.find((n) => n.id === "aws_vpc.main")).toBe(main);
   });
 });

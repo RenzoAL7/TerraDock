@@ -143,6 +143,8 @@ export default function App() {
     [creating, setCreating] = useState(false),
     [creatingDraft, setCreatingDraft] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
+  // The last resource created here: the diagram places it in free space.
+  const [placeId, setPlaceId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [properties, setProperties] = useState<Record<string, PropertyDraft>>(
     {},
@@ -569,7 +571,12 @@ export default function App() {
   /** Select the new node and show its block next to the diagram. */
   const showCreated = (id: string, path: string, targetLine: number) => {
     setSelected(id);
+    setPlaceId(id);
     pendingFocus.current = id;
+    // Stop waiting if it never shows up (an error elsewhere in the file).
+    window.setTimeout(() => {
+      if (pendingFocus.current === id) pendingFocus.current = "";
+    }, 5_000);
     setFilePath(path);
     setLine(targetLine);
     setReveal((n) => n + 1);
@@ -668,6 +675,7 @@ export default function App() {
   };
   const adopt = (next: Project) => {
     setCreated(null);
+    setPlaceId("");
     setDrafts({});
     setProperties({});
     setSelected(defaultSelection(next));
@@ -1176,6 +1184,8 @@ export default function App() {
                 onSelect={(id) => selectResource(id, true)}
                 focus={focus}
                 resetKey={`${project.id}:${view}`}
+                project={project.id}
+                created={placeId}
                 marks={marks}
                 onCreate={() => {
                   setError("");

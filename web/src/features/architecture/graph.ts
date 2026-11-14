@@ -178,6 +178,31 @@ export function placeAdded(
   });
 }
 
+/**
+ * Merges a new layout into the nodes on screen: a node keeps its position
+ * (and its object, when `unchanged` says nothing visible changed). Only
+ * `created`, a resource this client just created, moves to free space if it
+ * is new; renamed or reappearing nodes take their place in the layout.
+ */
+export function keepPositions(
+  previous: ResourceNode[],
+  next: ResourceNode[],
+  unchanged: (node: ResourceNode) => boolean,
+  created = "",
+): ResourceNode[] {
+  const byId = new Map(previous.map((n) => [n.id, n]));
+  let kept = 0;
+  const merged = next.map((node) => {
+    const old = byId.get(node.id);
+    if (!old || old.parentId !== node.parentId) return node;
+    kept++;
+    return unchanged(node) ? old : { ...node, position: old.position };
+  });
+  return created && kept && !byId.has(created)
+    ? placeAdded(merged, new Set([created]))
+    : merged;
+}
+
 export const categoryNames: Record<string, string> = {
   network: "Networking",
   compute: "Compute",
