@@ -238,7 +238,7 @@ Esta etapa reúne la evidencia de calidad; sus controles se desarrollan desde la
 - [ ] Documentación de compatibilidad, limitaciones, solución de problemas y recuperación.
 - [ ] CI y regresiones de parser, escritor, sincronización, interfaz, planes y reglas. Existe CI con pruebas Go, unitarias, de navegador y de la portada, imágenes ARM64 con promoción automática y monitor del sitio; faltan las regresiones de planes importados.
 - [ ] Pruebas en máquinas limpias y sesiones con usuarios distintos del autor.
-- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales. Medido en una MacBook ARM con Chromium: p95 de 50–159 ms con 300 recursos según el camino ([rendimiento](performance.md)). Faltan otras máquinas, la apertura y la navegación.
+- [ ] Objetivo propuesto: refresco del gráfico en menos de un segundo con proyectos de referencia de hasta 300 bloques de recursos; fijar máquina, navegador y medición p95. Verificar también apertura y navegación; registrar resultados reales. Medido en una MacBook ARM con Chromium: mediana de 59–242 ms con 300 recursos según el camino; el inspector es el más lento ([rendimiento](performance.md)). Faltan otras máquinas, la apertura y la navegación.
 - [ ] Cero incidencias conocidas de pérdida de datos y cero bloqueos abiertos en los flujos de lanzamiento.
 
 **Terminado cuando:** una persona instala la versión publicada, abre un proyecto compatible, completa los flujos principales, cierra y vuelve a abrir sin asistencia del autor. La evidencia de pruebas y la matriz de soporte acompañan la publicación.
