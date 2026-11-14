@@ -7,7 +7,11 @@ import type { NewAttribute, NewResource, Resource } from "../../lib/types";
  */
 export type TemplateAttribute = { name: string } & (
   | { value: string | number | boolean }
-  | { fromName: (name: string) => string }
+  | {
+      fromName: (name: string) => string;
+      /** Why the derived value differs from the name, if it had to. */
+      notice?: (name: string) => string;
+    }
   | { expression: string }
   | {
       reference: {
@@ -118,7 +122,11 @@ export const templates: ResourceTemplate[] = [
     attributes: [
       {
         name: "bucket_prefix",
-        fromName: (name) => `${name.toLowerCase().replaceAll("_", "-")}-`,
+        fromName: bucketPrefix,
+        notice: (name) =>
+          bucketBase(name).length > BUCKET_BASE
+            ? `bucket_prefix se recorta a ${BUCKET_BASE + 1} caracteres: AWS no admite más.`
+            : "",
       },
     ],
   },
@@ -156,7 +164,8 @@ export const templates: ResourceTemplate[] = [
   {
     type: "aws_db_instance",
     label: "Base de datos RDS",
-    description: "PostgreSQL con la contraseña gestionada por AWS.",
+    description:
+      "PostgreSQL cifrado y protegido contra borrado, con la contraseña gestionada por AWS.",
     defaultName: "db",
     attributes: [
       { name: "engine", value: "postgres" },
@@ -164,7 +173,10 @@ export const templates: ResourceTemplate[] = [
       { name: "allocated_storage", value: 20 },
       { name: "username", value: "app" },
       { name: "manage_master_user_password", value: true },
-      { name: "skip_final_snapshot", value: true },
+      { name: "storage_encrypted", value: true },
+      // Destroying it needs deletion_protection = false first, and then a
+      // final_snapshot_identifier or skip_final_snapshot = true.
+      { name: "deletion_protection", value: true },
     ],
   },
   {
@@ -186,6 +198,22 @@ export const templates: ResourceTemplate[] = [
   },
 ];
 
+/** Longest bucket_prefix base: AWS allows 37 characters with the "-". */
+const BUCKET_BASE = 36;
+/** Lowercase, "-" for "_", starting with a letter or digit. */
+function bucketBase(name: string) {
+  return (
+    name
+      .toLowerCase()
+      .replaceAll("_", "-")
+      .replace(/^[^a-z0-9]+/, "") || "bucket"
+  );
+}
+/** A valid S3 bucket_prefix derived from the resource name. */
+export function bucketPrefix(name: string) {
+  return `${bucketBase(name).slice(0, BUCKET_BASE).replace(/-+$/, "")}-`;
+}
+
 /** Same rule the server applies to resource names. */
 export function validName(name: string) {
   return /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(name);
@@ -193,7 +221,13 @@ export function validName(name: string) {
 
 /** Same rule the server applies to the name of a new file. */
 export function validFileName(name: string) {
-  return /^[A-Za-z0-9_][A-Za-z0-9._-]*\.tf$/.test(name) && name.length <= 128;
+  // Windows device names, with any extension (nul.tf is the NUL device).
+  const reserved = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+  return (
+    /^[A-Za-z0-9_][A-Za-z0-9._-]*\.tf$/.test(name) &&
+    name.length <= 128 &&
+    !reserved.test(name)
+  );
 }
 
 /** Declarations a reference argument can point to. */

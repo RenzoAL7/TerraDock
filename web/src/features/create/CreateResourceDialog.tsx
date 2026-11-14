@@ -142,6 +142,9 @@ export function CreateResourceDialog({
     (attr) =>
       "reference" in attr && attr.reference.required && !references[attr.name],
   );
+  const notices = template.attributes
+    .map((attr) => ("notice" in attr && attr.notice ? attr.notice(name) : ""))
+    .filter(Boolean);
   return (
     <Dialog title="Crear recurso" onClose={onClose} wide>
       <form
@@ -157,9 +160,10 @@ export function CreateResourceDialog({
         }}
       >
         <p className="dialog-intro">
-          TerraDock añade el bloque al final del archivo, sin tocar el resto.
-          Llega al disco con el autoguardado o al guardar, como cualquier otro
-          cambio.
+          En un archivo existente, TerraDock añade el bloque al final sin tocar
+          el resto, y llega al disco con el autoguardado o al guardar (⌘/Ctrl +
+          S), como cualquier otro cambio. Un archivo nuevo se escribe en el
+          disco en cuanto pulsas Crear recurso.
         </p>
         <fieldset className="create-palette">
           <legend>Tipo de recurso</legend>
@@ -259,6 +263,11 @@ export function CreateResourceDialog({
             : complétalo en el código antes de desplegar.
           </p>
         )}
+        {notices.map((notice) => (
+          <p className="create-note" role="status" key={notice}>
+            {notice}
+          </p>
+        ))}
         <div className="create-preview">
           <span>
             {creatingFile ? `Nuevo archivo ${fileName}` : `Al final de ${file}`}

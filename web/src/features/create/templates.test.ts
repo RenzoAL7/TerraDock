@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "../../lib/types";
 import {
+  bucketPrefix,
   buildResource,
   candidates,
   suggestName,
@@ -73,6 +74,37 @@ describe("resource templates", () => {
     ).toEqual([{ name: "bucket_prefix", value: "static-assets-" }]);
   });
 
+  it("derives a valid bucket_prefix from long names and names starting with _", () => {
+    const valid = /^[a-z0-9][a-z0-9-]{0,35}-$/;
+    for (const name of [
+      "_logs",
+      "__",
+      "-",
+      "A".repeat(64),
+      "_".repeat(10) + "x",
+    ])
+      expect(bucketPrefix(name)).toMatch(valid);
+    expect(bucketPrefix("_logs")).toBe("logs-");
+    expect(bucketPrefix("__")).toBe("bucket-");
+    expect(bucketPrefix("a".repeat(64))).toHaveLength(37);
+    // Cut at a "-" without doubling it.
+    expect(bucketPrefix("a".repeat(35) + "_b")).toBe("a".repeat(35) + "-");
+    const s3 = template("aws_s3_bucket").attributes[0];
+    expect("notice" in s3 && s3.notice!("a".repeat(40))).toContain("37");
+    expect("notice" in s3 && s3.notice!("logs")).toBe("");
+  });
+
+  it("protects the RDS template by default", () => {
+    const attrs = buildResource(
+      template("aws_db_instance"),
+      "db",
+      {},
+    ).attributes;
+    expect(attrs).toContainEqual({ name: "storage_encrypted", value: true });
+    expect(attrs).toContainEqual({ name: "deletion_protection", value: true });
+    expect(attrs.map((a) => a.name)).not.toContain("skip_final_snapshot");
+  });
+
   it("offers only declarations of the referenced kind", () => {
     const all = [
       resource("aws_vpc.main"),
@@ -102,7 +134,13 @@ describe("resource templates", () => {
       expect(validName(name)).toBe(true);
     for (const name of ["", "1a", "a.b", "a b", "ñ", "x".repeat(65)])
       expect(validName(name)).toBe(false);
-    for (const name of ["main.tf", "a.tf", "net-work_2.tf"])
+    for (const name of [
+      "main.tf",
+      "a.tf",
+      "net-work_2.tf",
+      "console.tf",
+      "com10.tf",
+    ])
       expect(validFileName(name)).toBe(true);
     for (const name of [
       ".tf",
@@ -112,6 +150,11 @@ describe("resource templates", () => {
       "dir/x.tf",
       "x.tf.json",
       "a b.tf",
+      "nul.tf",
+      "NUL.tf",
+      "con.backup.tf",
+      "com1.tf",
+      "Lpt9.tf",
     ])
       expect(validFileName(name)).toBe(false);
   });
