@@ -36,7 +36,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Flujo principal: iniciar programa → navegador local → Abrir carpeta → código y arquitectura → editar → guardar → sincronizar.
 - [ ] Un proyecto activo por sesión al principio; proyectos recientes para cambiar de carpeta.
 - [x] Selector de carpetas dentro de la interfaz, respaldado por Go, con opción de pegar una ruta.
-- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco y React Flow. El diagrama coloca los nodos en una rejilla fija; un motor de layout automático queda pendiente para cuando sea necesario.
+- [x] Stack propuesto: Go, HCL, React, TypeScript, Vite, Monaco y React Flow. El diagrama se ordena por capas con dagre al abrir el proyecto y con «Ordenar»; mientras se edita, cada nodo conserva su sitio.
 - [x] Definir la política de guardado. Decisión: cambios en vivo y autoguardado de borradores con HCL válido (desactivable), además de Guardar/Ctrl-S/Cmd-S. El diagrama refleja el borrador y los borradores se indican explícitamente.
 - [ ] Diseñar pantalla inicial, explorador, pestañas, vista dividida, inspector, panel de problemas y estados.
 - [ ] Definir por separado lectura de código, representación especializada y edición visual de propiedades.
@@ -81,7 +81,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 - [x] Vistas Arquitectura, Código y Dividida.
 - [x] Navegación de nodo a declaración y de declaración a nodo. En la vista dividida, el cursor selecciona el recurso y el nodo resalta su bloque.
 - [x] Inspector con valor o expresión, ubicación de origen y motivo cuando una propiedad no es editable visualmente.
-- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y colocación en rejilla fija (sin layout automático).
+- [x] Canvas con selección, zoom, desplazamiento, ajustar a pantalla, búsqueda y ordenado automático por capas (al abrir y con «Ordenar»), sin recolocar lo existente al editar.
 - [x] Estados separados: borrador sin guardar, guardando, sincronizado, analizando, gráfico desactualizado y validación.
 - [x] Panel de problemas con archivo, línea y explicación.
 
@@ -150,8 +150,9 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 
 **Funcionalidades**
 
-- [ ] Agrupación por VPC, subnet y módulo cuando los datos permiten justificarla.
-- [ ] Vistas de arquitectura y dependencias con leyenda y dirección de las relaciones.
+- [ ] Agrupación por VPC, subnet y módulo cuando los datos permiten justificarla. Hecho: VPC y subnet, también al ordenar (cada contenedor se ordena por dentro y cuenta como un bloque para su padre). Pendiente: módulos.
+- [ ] Vistas de arquitectura y dependencias con leyenda y dirección de las relaciones. Hecho: la vista de arquitectura ordena las referencias de arriba abajo (dagre); con 300 y 1000 recursos de prueba, más del 90 % apuntan hacia abajo. Pendiente: vista de dependencias propia.
+- [x] Ordenado automático sin perder el sitio de lo existente: por capas al abrir y con «Ordenar»; al editar, renombrar o deshacer, los nodos conservan o recuperan su sitio y los nuevos van junto a su primer vecino.
 - [ ] Inspeccionar por qué existe una relación y qué atributo la origina.
 - [ ] Colapsar grupos, filtrar recursos y centrar resultados.
 - [ ] Guardar posiciones y preferencias separadas del código Terraform.

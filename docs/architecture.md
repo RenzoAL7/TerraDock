@@ -89,6 +89,18 @@ El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de
 
 El cliente solo pide `GET /api/floci` mientras la pestaña Floci está visible o hay una operación en curso, para que plan, aplicar y destruir sigan actualizando el diagrama aunque se salga de la pestaña. Ese estado comprueba si el endpoint responde y, una vez por proceso y fuera del bloqueo del ejecutor, lee `terraform version -json`; no se reintenta si falla. Como el estado no se refresca siempre, el diagrama no muestra marcas de un estado leído para otro proyecto y descarta las de un plan leído para una revisión guardada anterior.
 
+## Colocación del diagrama
+
+`buildGraph` (`web/src/features/architecture/graph.ts`) deriva la estructura (qué nodo va dentro de qué VPC o subred, y las referencias) y delega las posiciones en un layout de `features/architecture/layout/`:
+
+- `layered.ts` es el único módulo que importa `@dagrejs/dagre`. Ordena por capas, de arriba abajo, de dentro afuera: primero cada subred, después cada VPC con sus subredes como un bloque y al final el nivel superior. No usa el modo compuesto de dagre. Una referencia entre contenedores distintos se eleva a los hijos del contenedor común más cercano, y la que une un nodo con su propio contenedor se omite. Las partes sin conexión se empaquetan en filas. Proveedores, variables y locals quedan en columnas a la izquierda y los outputs a la derecha, ordenados según la altura de sus vecinos. La entrada se ordena por id, así que el resultado no depende del orden de los archivos.
+- `grid.ts` es la rejilla fija anterior. Hoy solo coloca los hijos de un contenedor que aparece mientras se escribe.
+- `stable.ts` (`stabilize`) se ejecuta en cada actualización: al escribir, desde el inspector, cuando cambia un archivo en disco o al cambiar de vista. Conserva la posición de cada nodo existente, también si se renombra. Devuelve a su sitio un nodo que reaparece y coloca cada nodo nuevo en el primer hueco libre de su contenedor, junto a su primer vecino. Ajusta cada contenedor al marco de sus hijos y empuja solo a los hermanos que llegue a solapar. Es lineal y cuesta menos de 1 ms con 300 recursos.
+
+El layout por capas solo corre al abrir un proyecto (cambia `projectKey`, el `id` del proyecto) y al pulsar **Ordenar**. `resetKey` (proyecto y vista) solo reencuadra la vista. Las posiciones del último proyecto se guardan en memoria mientras el lienzo está desmontado (vistas Código y Análisis), no en disco.
+
+La exportación (`exportDiagram.ts`, `rasterize.ts`) serializa ese mismo modelo de nodos, no el DOM. Comparte con el lienzo iconos, colores y textos (`diagramIcons.ts`, `cardDetail`).
+
 ## Desarrollo y build
 
 Durante el desarrollo, Vite sirve el frontend en `127.0.0.1:5173` y reenvía la API al proceso Go en `127.0.0.1:7331`. `make dev-api` permite el origen exacto de Vite mediante `--dev-origin`; esa excepción es opcional y no se necesita para el build. Durante la ejecución del build, Go sirve los archivos de `web/dist` y la API desde un mismo puerto. Monaco y sus workers se incluyen en la compilación del frontend.
@@ -109,4 +121,4 @@ El workflow [Binarios](../.github/workflows/release.yml) ejecuta `make package` 
 - La importación de planes JSON arbitrarios y la ejecución contra cuentas AWS reales quedan fuera de esta entrega.
 - Se publica compatibilidad parcial antes de ampliar recursos o evaluación semántica.
 
-Referencias técnicas: [HCL](https://github.com/hashicorp/hcl), [módulos Terraform](https://developer.hashicorp.com/terraform/language/files), [Monaco Editor](https://github.com/microsoft/monaco-editor) y [React Flow](https://reactflow.dev/).
+Referencias técnicas: [HCL](https://github.com/hashicorp/hcl), [módulos Terraform](https://developer.hashicorp.com/terraform/language/files), [Monaco Editor](https://github.com/microsoft/monaco-editor), [React Flow](https://reactflow.dev/) y [dagre](https://github.com/dagrejs/dagre).

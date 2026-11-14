@@ -85,6 +85,16 @@ Si otra pestaña cambia el proyecto, los borradores conservan su identidad origi
 - **Deshacer** solo quita el bloque si el archivo sigue exactamente como quedó tras crearlo; si no, se quita en el código (⌘/Ctrl + Z en el editor también funciona mientras ese archivo está abierto).
 - No se conecta arrastrando de un nodo a otro: las referencias se eligen en el diálogo al crear, o se escriben en el código.
 
+### Ordenar el diagrama
+
+- El orden por capas solo se calcula al abrir un proyecto (o al cambiar de ejemplo) y al pulsar **Ordenar**. Este segundo caso recoloca todo, incluidos los nodos movidos a mano. Mientras se edita, los nodos existentes no se mueven, salvo que un contenedor crezca y empuje a un hermano que pasaría a solapar.
+- Las posiciones no se guardan en disco ni en el código. Se conservan al cambiar de vista dentro de la misma pestaña, pero recargar la página o volver a abrir el proyecto lo ordena de nuevo.
+- Un nodo que desaparece y otro del mismo tipo que aparece en el mismo contenedor, en la misma actualización, se tratan como un renombrado: el nuevo ocupa el sitio del anterior. Si en esa misma edición se borra un recurso y se escribe otro distinto del mismo tipo, el nuevo también hereda ese sitio.
+- Un recurso que reaparece (deshacer, cortar y pegar) vuelve a su sitio si sigue libre, y si no a uno cercano. La pestaña recuerda hasta 2000 posiciones de recursos eliminados, mientras siga abierta.
+- Los recursos nuevos se colocan junto a su primer vecino, por el orden de las referencias. Si no tienen ninguna, van al primer hueco libre leyendo de izquierda a derecha y de arriba abajo, que puede quedar lejos de la vista actual. Al crear un recurso desde el diagrama, este centra el nodo.
+- Las referencias entre contenedores se ordenan entre los contenedores, no entre sus recursos. Dentro de una subred, una referencia a algo de otra VPC no cambia el orden interno. Los ciclos se rompen y alguna referencia puede quedar apuntando hacia arriba.
+- Variables, locals y proveedores van en columnas a la izquierda, y los outputs a la derecha. Sus referencias suelen dibujarse en horizontal.
+
 ### Exportar el diagrama
 
 - Se exporta lo mismo que se ve, en el estado en que está: posiciones, contenedores, referencias, el nodo seleccionado, los recursos atenuados por la búsqueda y las marcas de Floci (`+ crear`, `✓ en Floci`…) si la pestaña Floci las calculó. Los borradores sin guardar se exportan tal como los muestra el diagrama, y la banda superior lo indica.
