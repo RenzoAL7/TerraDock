@@ -1185,6 +1185,66 @@ test("deshacer mientras el autoguardado del recurso está en curso no deja el bl
   );
 });
 
+test("crear un recurso mientras se autoguarda el archivo usa la revisión que dejó ese guardado", async ({
+  page,
+}) => {
+  await setAutosave(page, true);
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  const file = join(directory, "main.tf");
+  // Autosave waits for the live preview of the typed edit. Hold that preview
+  // so the save starts only once the creation request is on its way.
+  let holding = false;
+  let releasePreview = () => {};
+  const previewHeld = new Promise<void>(
+    (resolve) => (releasePreview = resolve),
+  );
+  await page.route("**/api/analyze", async (route) => {
+    if (holding) await previewHeld;
+    await route.continue();
+  });
+  // The server answers the creation on the old revision; the answer reaches
+  // the page only after the autosave has landed and cleared the draft.
+  await page.route("**/api/resource-draft", async (route) => {
+    const response = await route.fetch();
+    const saved = page.waitForResponse(
+      (r) => r.url().endsWith("/api/files") && r.request().method() === "PUT",
+    );
+    holding = false;
+    releasePreview();
+    await saved;
+    await expect(page.getByTestId("sync-status")).toHaveText(
+      "Sincronizado con el archivo",
+    );
+    await route.fulfill({ response });
+  });
+  await openInstanceCode(page, "aws_instance.web");
+  await page
+    .getByRole("button", { name: "Dividir vista", exact: true })
+    .click();
+  const edited = localSource.replace('"t3.micro"', '"t3.medium"');
+  holding = true;
+  await replaceEditorContent(page, edited);
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Crear recurso" });
+  await dialog.getByRole("button", { name: /^Subred/ }).click();
+  await dialog.getByLabel("Nombre", { exact: true }).fill("db");
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await expect(dialog).not.toBeVisible();
+  // The block is stored on top of the saved revision, not as a conflict.
+  await expect
+    .poll(() => readFile(file, "utf8"))
+    .toContain('resource "aws_subnet" "db"');
+  const saved = await readFile(file, "utf8");
+  expect(saved.startsWith(edited)).toBe(true);
+  await expect(page.getByTestId("sync-status")).toHaveText(
+    "Sincronizado con el archivo",
+  );
+  await expect(page.getByText("en conflicto con el disco")).toHaveCount(0);
+});
+
 test("crear un recurso con un borrador abierto lo añade al borrador, no al disco", async ({
   page,
   request,

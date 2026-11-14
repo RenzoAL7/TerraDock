@@ -32,7 +32,13 @@ import {
   X,
 } from "lucide-react";
 import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
-import { afterFileSave, settledProperties, withDraft } from "./drafts";
+import {
+  afterFileSave,
+  liveFile,
+  sameText,
+  settledProperties,
+  withDraft,
+} from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
 import { SaveQueue } from "./saveQueue";
@@ -57,7 +63,7 @@ import {
 } from "../features/create/CreateResourceDialog";
 import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
-import { api, errorMessage, liveApi } from "../lib/api";
+import { ApiError, api, errorMessage, liveApi } from "../lib/api";
 import type {
   Draft,
   NewResource,
@@ -236,9 +242,6 @@ export default function App() {
   const applyProperty = useCallback(
     (target: Resource, property: Property, text: string) => {
       const job = applyQueue.current.then(async () => {
-        const current = projectRef.current;
-        const file = current?.files.find((f) => f.path === target.file);
-        if (!current || !file) return "El archivo ya no está disponible.";
         let value: string | number | boolean;
         try {
           value = parsePropertyInput(property, text);
@@ -246,29 +249,36 @@ export default function App() {
           return errorMessage(reason);
         }
         for (let attempt = 0; attempt < 2; attempt++) {
-          const base = draftsRef.current[file.path];
-          const content =
-            base?.projectId === current.id ? base.content : file.content;
+          // Read the file on every attempt: a save or reload that landed
+          // during the previous request changes its revision or its text.
+          const before = liveFile(
+            projectRef.current,
+            draftsRef.current,
+            target.file,
+          );
+          if (!before) return "El archivo ya no está disponible.";
           try {
             const result = await liveApi.editDraft(
-              current.id,
-              file.path,
-              content,
+              before.projectId,
+              target.file,
+              before.content,
               target.id,
               property.name,
               value,
             );
-            const latest = draftsRef.current[file.path];
-            const latestContent =
-              latest?.projectId === current.id ? latest.content : file.content;
+            const now = liveFile(
+              projectRef.current,
+              draftsRef.current,
+              target.file,
+            );
             // Typing in the editor during the request: retry on fresh text.
-            if (latestContent !== content) continue;
+            if (!sameText(before, now)) continue;
             const next = withDraft(
               draftsRef.current,
-              file.path,
+              target.file,
               result.content,
-              file,
-              current.id,
+              now.file,
+              now.projectId,
             );
             draftsRef.current = next;
             urgentPreview.current = true;
@@ -291,33 +301,28 @@ export default function App() {
   // the usual revision check.
   const createDraft = useCallback((path: string, spec: NewResource) => {
     const job = applyQueue.current.then(async () => {
-      const current = projectRef.current;
-      const file = current?.files.find((f) => f.path === path);
-      if (!current || !file)
-        return { error: "El archivo ya no está disponible." };
       for (let attempt = 0; attempt < 2; attempt++) {
-        const base = draftsRef.current[path];
-        const mine = base?.projectId === current.id ? base : undefined;
-        const content = mine ? mine.content : file.content;
+        // Read the file on every attempt: our own autosave may land during
+        // the request, clearing the draft and advancing the revision.
+        const before = liveFile(projectRef.current, draftsRef.current, path);
+        if (!before) return { error: "El archivo ya no está disponible." };
         try {
           const result = await liveApi.resourceDraft(
-            current.id,
+            before.projectId,
             path,
-            content,
-            mine ? mine.baseRevision : file.revision,
+            before.content,
+            before.baseRevision,
             spec,
           );
-          const latest = draftsRef.current[path];
-          const latestContent =
-            latest?.projectId === current.id ? latest.content : file.content;
+          const now = liveFile(projectRef.current, draftsRef.current, path);
           // Typing in the editor during the request: retry on fresh text.
-          if (latestContent !== content) continue;
+          if (!sameText(before, now)) continue;
           const next = withDraft(
             draftsRef.current,
             path,
             result.content,
-            file,
-            current.id,
+            now.file,
+            now.projectId,
           );
           draftsRef.current = next;
           urgentPreview.current = true;
@@ -328,12 +333,22 @@ export default function App() {
             created: {
               id: `${spec.type}.${spec.name}`,
               path,
-              projectId: current.id,
-              before: content,
+              projectId: now.projectId,
+              before: before.content,
               after: result.content,
             },
           };
         } catch (reason) {
+          // The revision we sent went stale because a save landed meanwhile:
+          // the next attempt sends the new one.
+          const now = liveFile(projectRef.current, draftsRef.current, path);
+          if (
+            reason instanceof ApiError &&
+            reason.code === "revision_conflict" &&
+            now &&
+            now.baseRevision !== before.baseRevision
+          )
+            continue;
           return { error: errorMessage(reason) };
         }
       }
