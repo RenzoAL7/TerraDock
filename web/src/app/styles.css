@@ -769,7 +769,7 @@ a {
 .export-error {
   position: absolute;
   left: 22px;
-  bottom: 66px;
+  bottom: 86px;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -781,10 +781,11 @@ a {
   border-radius: 6px;
   z-index: 6;
 }
+/* Above the controls, so it never sits under them whatever their width. */
 .canvas-legend {
   position: absolute;
-  bottom: 31px;
-  left: 245px;
+  bottom: 66px;
+  left: 26px;
   display: flex;
   gap: 12px;
   font-size: 8px;
