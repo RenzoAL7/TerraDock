@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/RenzoAL7/TerraDock/internal/floci"
+	"github.com/RenzoAL7/TerraDock/internal/terraform"
 	"github.com/RenzoAL7/TerraDock/internal/workspace"
 )
 
@@ -88,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/properties", s.property)
 	mux.HandleFunc("POST /api/analyze", s.analyze)
 	mux.HandleFunc("POST /api/edit-draft", s.editDraft)
+	mux.HandleFunc("POST /api/resource-draft", s.resourceDraft)
+	mux.HandleFunc("POST /api/resource-file", s.resourceFile)
 	mux.HandleFunc("GET /api/floci", s.flociStatus)
 	mux.HandleFunc("POST /api/floci/run", s.flociRun)
 	mux.HandleFunc("POST /api/floci/cancel", s.flociCancel)
@@ -280,6 +283,45 @@ func (s *Server) editDraft(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"content": content})
 }
 
+// resourceDraft adds a resource block to unsaved content without writing; the
+// client keeps it as a draft and saves it with the usual revision check.
+func (s *Server) resourceDraft(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID        string                `json:"projectId"`
+		Path             string                `json:"path"`
+		Content          string                `json:"content"`
+		ExpectedRevision string                `json:"expectedRevision"`
+		Resource         terraform.NewResource `json:"resource"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	content, line, err := s.workspace.ResourceDraft(request.ProjectID, request.Path, request.Content, request.ExpectedRevision, request.Resource)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"content": content, "line": line})
+}
+
+// resourceFile writes a new .tf file holding only the new resource.
+func (s *Server) resourceFile(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ProjectID string                `json:"projectId"`
+		Path      string                `json:"path"`
+		Resource  terraform.NewResource `json:"resource"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	snapshot, err := s.workspace.CreateResourceFile(request.ProjectID, request.Path, request.Resource)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	respond(w, http.StatusOK, snapshot)
+}
+
 func (s *Server) flociStatus(w http.ResponseWriter, r *http.Request) {
 	if s.floci == nil {
 		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
@@ -362,7 +404,7 @@ func respondError(w http.ResponseWriter, err error) {
 	}
 	status := http.StatusBadRequest
 	switch typed.Code {
-	case "revision_conflict", "project_conflict":
+	case "revision_conflict", "project_conflict", "file_exists":
 		status = http.StatusConflict
 	case "forbidden_path":
 		status = http.StatusForbidden

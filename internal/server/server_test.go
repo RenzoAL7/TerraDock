@@ -354,6 +354,53 @@ func TestHTTPLivePreviewAndDraftEditNeverWrite(t *testing.T) {
 	assertStatus(t, api.request(t, "POST", "/api/analyze", bodyJSON(t, map[string]any{"projectId": initial.ID}), nil), http.StatusForbidden)
 }
 
+func TestHTTPCreateResourceDraftAndFile(t *testing.T) {
+	api := setupAPI(t)
+	initial := projectFrom(t, api.request(t, "POST", "/api/open", bodyJSON(t, map[string]string{"path": api.root}), nil))
+	subnet := map[string]any{"type": "aws_subnet", "name": "app", "attributes": []map[string]any{
+		{"name": "vpc_id", "expression": "aws_vpc.main.id"},
+		{"name": "cidr_block", "value": "10.0.1.0/24"},
+	}}
+	request := map[string]any{"projectId": initial.ID, "path": "main.tf", "content": testSource, "expectedRevision": initial.Files[0].Revision, "resource": subnet}
+	response := api.request(t, "POST", "/api/resource-draft", bodyJSON(t, request), nil)
+	defer response.Body.Close()
+	var draft struct {
+		Content string
+		Line    int
+	}
+	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&draft) != nil {
+		t.Fatalf("resource-draft failed: %d", response.StatusCode)
+	}
+	if !strings.HasPrefix(draft.Content, testSource) || draft.Line != 5 || !strings.Contains(draft.Content, "vpc_id     = aws_vpc.main.id") {
+		t.Fatalf("unexpected draft: %+v", draft)
+	}
+	if disk, _ := os.ReadFile(filepath.Join(api.root, "main.tf")); string(disk) != testSource {
+		t.Fatal("resource-draft wrote to disk")
+	}
+	duplicate := map[string]any{"projectId": initial.ID, "path": "main.tf", "content": testSource, "expectedRevision": initial.Files[0].Revision, "resource": map[string]any{"type": "aws_vpc", "name": "main"}}
+	assertStatus(t, api.request(t, "POST", "/api/resource-draft", bodyJSON(t, duplicate), nil), http.StatusBadRequest)
+	stale := map[string]any{"projectId": initial.ID, "path": "main.tf", "content": testSource, "expectedRevision": "old", "resource": subnet}
+	assertStatus(t, api.request(t, "POST", "/api/resource-draft", bodyJSON(t, stale), nil), http.StatusConflict)
+
+	created := projectFrom(t, api.request(t, "POST", "/api/resource-file", bodyJSON(t, map[string]any{"projectId": initial.ID, "path": "network.tf", "resource": subnet}), nil))
+	if len(created.Files) != 2 || len(created.Resources) != 2 {
+		t.Fatalf("new file not in the project: %+v", created.Files)
+	}
+	if disk, err := os.ReadFile(filepath.Join(api.root, "network.tf")); err != nil || !strings.HasPrefix(string(disk), `resource "aws_subnet" "app"`) {
+		t.Fatalf("new file not written: %q, %v", disk, err)
+	}
+	again := bodyJSON(t, map[string]any{"projectId": initial.ID, "path": "network.tf", "resource": map[string]any{"type": "aws_s3_bucket", "name": "logs"}})
+	assertStatus(t, api.request(t, "POST", "/api/resource-file", again, nil), http.StatusConflict)
+	outside := bodyJSON(t, map[string]any{"projectId": initial.ID, "path": "../outside.tf", "resource": map[string]any{"type": "aws_s3_bucket", "name": "logs"}})
+	assertStatus(t, api.request(t, "POST", "/api/resource-file", outside, nil), http.StatusBadRequest)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(api.root), "outside.tf")); !os.IsNotExist(err) {
+		t.Fatal("file created outside the root")
+	}
+	// Creating writes files, so it requires the session token.
+	api.token = ""
+	assertStatus(t, api.request(t, "POST", "/api/resource-file", again, nil), http.StatusForbidden)
+}
+
 func TestHTTPOpeningAndAnalyzingNeverRunTerraform(t *testing.T) {
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "real-secret")
 	dir := t.TempDir()

@@ -32,7 +32,13 @@ import {
   X,
 } from "lucide-react";
 import { useOtherTabDrafts, useWorkspace } from "./useWorkspace";
-import { afterFileSave, settledProperties, withDraft } from "./drafts";
+import {
+  afterFileSave,
+  liveFile,
+  sameText,
+  settledProperties,
+  withDraft,
+} from "./drafts";
 import { useLivePreview } from "./useLivePreview";
 import { useDraftRecovery } from "./useDraftRecovery";
 import { SaveQueue } from "./saveQueue";
@@ -51,10 +57,20 @@ import {
   type PropertyDraft,
 } from "../features/inspector/Inspector";
 import { FolderPicker } from "../features/project/FolderPicker";
+import {
+  CreateResourceDialog,
+  type CreateTarget,
+} from "../features/create/CreateResourceDialog";
 import type { DiskBasis } from "../features/editor/ConflictDiff";
 import { Dialog } from "../components/Dialog";
-import { api, errorMessage, liveApi } from "../lib/api";
-import type { Draft, Project, Property, Resource } from "../lib/types";
+import { ApiError, api, errorMessage, liveApi } from "../lib/api";
+import type {
+  Draft,
+  NewResource,
+  Project,
+  Property,
+  Resource,
+} from "../lib/types";
 
 const CodeEditor = lazy(() => import("../features/editor/CodeEditor"));
 // Only loaded when a file changed on disk under a draft.
@@ -85,6 +101,15 @@ function ago(timestamp: number) {
   const hours = Math.round(minutes / 60);
   if (hours > -24) return relativeTime.format(hours, "hour");
   return relativeTime.format(Math.round(hours / 24), "day");
+}
+/** The last resource created from the diagram, for the undo notice. */
+interface Created {
+  id: string;
+  path: string;
+  projectId: string;
+  /** File text before the block was added; null for a new file. */
+  before: string | null;
+  after: string;
 }
 function without<T>(items: Record<string, T>, key: string) {
   const next = { ...items };
@@ -120,7 +145,18 @@ export default function App() {
   );
   const [folder, setFolder] = useState(false),
     [examples, setExamples] = useState(false),
-    [help, setHelp] = useState(false);
+    [help, setHelp] = useState(false),
+    [creating, setCreating] = useState(false),
+    [creatingDraft, setCreatingDraft] = useState(false);
+  // The create dialog shows its own failures; the app-wide banner stays free.
+  const [createError, setCreateError] = useState("");
+  const [created, setCreated] = useState<Created | null>(null);
+  // The last resource created here: the diagram places it in free space.
+  const [placeId, setPlaceId] = useState("");
+  const placed = useCallback(
+    (id: string) => setPlaceId((current) => (current === id ? "" : current)),
+    [],
+  );
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [properties, setProperties] = useState<Record<string, PropertyDraft>>(
     {},
@@ -150,6 +186,8 @@ export default function App() {
   // Our own save reaches this tab over SSE before its HTTP response; until
   // then the draft looks based on an old revision but is not a conflict.
   const [savingPath, setSavingPath] = useState("");
+  // The save in flight, for actions that must run after it lands.
+  const inFlight = useRef<{ path: string; done: Promise<void> } | null>(null);
   // One save at a time; one asked for meanwhile waits instead of vanishing.
   const [waitingSaves, setWaitingSaves] = useState<readonly string[]>([]);
   const [saveQueue] = useState(() => new SaveQueue(setWaitingSaves));
@@ -166,6 +204,11 @@ export default function App() {
       )
         return;
       setSavingPath(path);
+      let finish = () => {};
+      inFlight.current = {
+        path,
+        done: new Promise<void>((resolve) => (finish = resolve)),
+      };
       try {
         const next = await perform(() =>
           api.save(
@@ -189,6 +232,8 @@ export default function App() {
           setDrafts(draftsRef.current);
         }
       } finally {
+        finish();
+        inFlight.current = null;
         setSavingPath("");
       }
     },
@@ -203,9 +248,6 @@ export default function App() {
   const applyProperty = useCallback(
     (target: Resource, property: Property, text: string) => {
       const job = applyQueue.current.then(async () => {
-        const current = projectRef.current;
-        const file = current?.files.find((f) => f.path === target.file);
-        if (!current || !file) return "El archivo ya no está disponible.";
         let value: string | number | boolean;
         try {
           value = parsePropertyInput(property, text);
@@ -213,29 +255,36 @@ export default function App() {
           return errorMessage(reason);
         }
         for (let attempt = 0; attempt < 2; attempt++) {
-          const base = draftsRef.current[file.path];
-          const content =
-            base?.projectId === current.id ? base.content : file.content;
+          // Read the file on every attempt: a save or reload that landed
+          // during the previous request changes its revision or its text.
+          const before = liveFile(
+            projectRef.current,
+            draftsRef.current,
+            target.file,
+          );
+          if (!before) return "El archivo ya no está disponible.";
           try {
             const result = await liveApi.editDraft(
-              current.id,
-              file.path,
-              content,
+              before.projectId,
+              target.file,
+              before.content,
               target.id,
               property.name,
               value,
             );
-            const latest = draftsRef.current[file.path];
-            const latestContent =
-              latest?.projectId === current.id ? latest.content : file.content;
+            const now = liveFile(
+              projectRef.current,
+              draftsRef.current,
+              target.file,
+            );
             // Typing in the editor during the request: retry on fresh text.
-            if (latestContent !== content) continue;
+            if (!sameText(before, now)) continue;
             const next = withDraft(
               draftsRef.current,
-              file.path,
+              target.file,
               result.content,
-              file,
-              current.id,
+              now.file,
+              now.projectId,
             );
             draftsRef.current = next;
             urgentPreview.current = true;
@@ -252,6 +301,87 @@ export default function App() {
     },
     [],
   );
+
+  // Diagram → code: append a new resource to the file draft, like an
+  // inspector edit. The draft reaches disk through autosave or a save, with
+  // the usual revision check.
+  const createDraft = useCallback((path: string, spec: NewResource) => {
+    const job = applyQueue.current.then(async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        // Read the file on every attempt: our own autosave may land during
+        // the request, clearing the draft and advancing the revision.
+        const before = liveFile(projectRef.current, draftsRef.current, path);
+        if (!before) return { error: "El archivo ya no está disponible." };
+        try {
+          const result = await liveApi.resourceDraft(
+            before.projectId,
+            path,
+            before.content,
+            before.baseRevision,
+            spec,
+          );
+          const now = liveFile(projectRef.current, draftsRef.current, path);
+          // Typing in the editor during the request: retry on fresh text.
+          if (!sameText(before, now)) continue;
+          const next = withDraft(
+            draftsRef.current,
+            path,
+            result.content,
+            now.file,
+            now.projectId,
+          );
+          draftsRef.current = next;
+          urgentPreview.current = true;
+          setDrafts(next);
+          return {
+            error: "",
+            line: result.line,
+            created: {
+              id: `${spec.type}.${spec.name}`,
+              path,
+              projectId: now.projectId,
+              before: before.content,
+              after: result.content,
+            },
+          };
+        } catch (reason) {
+          // The revision we sent went stale because a save landed meanwhile:
+          // the next attempt sends the new one.
+          const now = liveFile(projectRef.current, draftsRef.current, path);
+          if (
+            reason instanceof ApiError &&
+            reason.code === "revision_conflict" &&
+            now &&
+            now.baseRevision !== before.baseRevision
+          )
+            continue;
+          return { error: errorMessage(reason) };
+        }
+      }
+      return {
+        error:
+          "El código cambió mientras se creaba el recurso. Vuelve a intentarlo.",
+      };
+    });
+    applyQueue.current = job.then(
+      () => "",
+      () => "",
+    );
+    return job;
+  }, []);
+
+  // A created resource is centered once the live view includes it, after the
+  // canvas has fitted the split view it may have just switched to.
+  const pendingFocus = useRef("");
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id || !live?.resources.some((r) => r.id === id)) return;
+    const timer = window.setTimeout(() => {
+      pendingFocus.current = "";
+      setFocus((f) => ({ id, n: f.n + 1 }));
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [live]);
 
   // On wide screens, select a resource of whatever project the server opened.
   const initialSelection = useRef(false);
@@ -459,11 +589,116 @@ export default function App() {
     setDrafts(next);
     if (save && next[path]) void saveDraft(path);
   };
+  /** Select the new node and show its block next to the diagram. */
+  const showCreated = (id: string, path: string, targetLine: number) => {
+    setSelected(id);
+    setPlaceId(id);
+    pendingFocus.current = id;
+    // Stop waiting if it never shows up (an error elsewhere in the file).
+    window.setTimeout(() => {
+      if (pendingFocus.current === id) pendingFocus.current = "";
+    }, 5_000);
+    setFilePath(path);
+    setLine(targetLine);
+    setReveal((n) => n + 1);
+    if (view !== "split") setView("split");
+  };
+  const createResource = async (request: {
+    resource: NewResource;
+    path: string;
+    newFile: boolean;
+  }) => {
+    const id = `${request.resource.type}.${request.resource.name}`;
+    setCreateError("");
+    if (request.newFile) {
+      const next = await perform(
+        () =>
+          api.createResourceFile(project.id, request.path, request.resource),
+        setCreateError,
+      );
+      if (!next) return;
+      setCreating(false);
+      setCreated({
+        id,
+        path: request.path,
+        projectId: next.id,
+        before: null,
+        after: "",
+      });
+      showCreated(id, request.path, 1);
+      return;
+    }
+    setCreatingDraft(true);
+    try {
+      const result = await createDraft(request.path, request.resource);
+      if (result.error || !result.created) {
+        setCreateError(result.error);
+        return;
+      }
+      setCreating(false);
+      setCreated(result.created);
+      showCreated(id, request.path, result.line);
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
+  /** Remove the block just created, if the file still ends exactly with it. */
+  const undoCreate = async (entry: Created) => {
+    setCreated(null);
+    // An autosave of the block may be in flight: undo on top of what it
+    // writes, or it would land after the undo and keep the block on disk.
+    for (
+      let save = inFlight.current;
+      save?.path === entry.path;
+      save = inFlight.current
+    )
+      await save.done;
+    const current = projectRef.current;
+    const saved = current?.files.find((f) => f.path === entry.path);
+    if (!current || !saved || entry.before === null) return;
+    const base = draftsRef.current[entry.path];
+    const text = base?.projectId === current.id ? base.content : saved.content;
+    if (current.id !== entry.projectId || text !== entry.after) {
+      setError(
+        `${entry.path} cambió después de crear ${entry.id}. Quita el bloque en el código.`,
+      );
+      return;
+    }
+    const next = withDraft(
+      draftsRef.current,
+      entry.path,
+      entry.before,
+      saved,
+      current.id,
+    );
+    draftsRef.current = next;
+    urgentPreview.current = true;
+    setDrafts(next);
+    setSelected((id) => (id === entry.id ? "" : id));
+  };
+  // A file can receive a new resource unless its draft is in conflict.
+  const createTargets: CreateTarget[] = project.files
+    .filter((f) => f.path.endsWith(".tf"))
+    .map((f) => {
+      const d = drafts[f.path];
+      return {
+        path: f.path,
+        blocked: !d
+          ? undefined
+          : d.projectId !== project.id
+            ? "borrador de otro proyecto"
+            : d.baseRevision !== f.revision && savingPath !== f.path
+              ? "en conflicto con el disco"
+              : undefined,
+      };
+    });
   const switchWorkspace = (action: () => void) => {
     if (hasUnsaved) setPending(() => action);
     else action();
   };
   const adopt = (next: Project) => {
+    setCreated(null);
+    setPlaceId("");
     setDrafts({});
     setProperties({});
     setSelected(defaultSelection(next));
@@ -731,6 +966,22 @@ export default function App() {
           </button>
         </div>
       )}
+      {created && created.projectId === project.id && (
+        <div className="global-message created-message" role="status">
+          <Check size={16} />
+          <span>
+            {created.before === null
+              ? `Se creó ${created.path} con ${created.id}.`
+              : `Se añadió ${created.id} al final de ${created.path}.`}
+          </span>
+          {created.before !== null && (
+            <button onClick={() => void undoCreate(created)}>Deshacer</button>
+          )}
+          <button aria-label="Cerrar aviso" onClick={() => setCreated(null)}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
       {(orphanDrafts.length > 0 || staleProperties) && (
         <div className="global-message">
           <TriangleAlert size={16} />
@@ -956,7 +1207,14 @@ export default function App() {
                 onSelect={(id) => selectResource(id, true)}
                 focus={focus}
                 resetKey={`${project.id}:${view}`}
+                project={project.id}
+                created={placeId}
+                onPlaced={placed}
                 marks={marks}
+                onCreate={() => {
+                  setCreateError("");
+                  setCreating(true);
+                }}
               />
             )}
             {(view === "code" || view === "split") && editor}
@@ -1121,6 +1379,26 @@ export default function App() {
               adopt(next);
               setFolder(false);
             }
+          }}
+        />
+      )}
+      {creating && (
+        <CreateResourceDialog
+          resources={live.resources}
+          files={createTargets}
+          defaultFile={
+            resource?.file.endsWith(".tf")
+              ? resource.file
+              : (file?.path ?? "main.tf")
+          }
+          preferred={selected}
+          busy={busy || creatingDraft}
+          error={createError}
+          onCreate={(request) => void createResource(request)}
+          onClose={() => {
+            if (busy || creatingDraft) return;
+            setCreating(false);
+            setCreateError("");
           }}
         />
       )}

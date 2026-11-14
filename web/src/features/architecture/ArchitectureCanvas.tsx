@@ -36,6 +36,7 @@ import type { Resource, ResourceEdge } from "../../lib/types";
 import { hidesValue, SENSITIVE_TEXT } from "../../lib/sensitive";
 import {
   buildGraph,
+  keepPositions,
   nodeSignature,
   shortType,
   type ResourceNode,
@@ -218,6 +219,14 @@ interface Props {
   resetKey: string;
   marks?: Record<string, DeployMark>;
   focus?: { id: string; n: number };
+  /** Opens the "create resource" dialog (button and right click on the canvas). */
+  onCreate?: () => void;
+  /** Identity of the project: a different one is laid out from scratch. */
+  project?: string;
+  /** A resource this client just created, placed beside the diagram. */
+  created?: string;
+  /** The created resource is on the canvas: stop placing it. */
+  onPlaced?: (id: string) => void;
 }
 function Graph({
   resources,
@@ -228,6 +237,10 @@ function Graph({
   resetKey,
   marks,
   focus,
+  onCreate,
+  project = "",
+  created = "",
+  onPlaced,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -295,26 +308,45 @@ function Graph({
   // object when nothing visible changed lets React Flow skip re-rendering it,
   // which keeps large diagrams responsive.
   const nodeKeys = useRef(new Map<string, string>());
+  const laidOut = useRef(project);
   useEffect(() => {
     const graph = buildGraph(resources, relations, selected, query);
+    // Another project gets a full layout instead of the old positions.
+    const fresh = laidOut.current !== project;
+    laidOut.current = project;
     setNodes((previous) => {
-      const byId = new Map(previous.map((n) => [n.id, n]));
-      const keys = new Map<string, string>();
-      const next = decorate(graph.nodes).map((node) => {
-        const key = nodeKey(node);
-        keys.set(node.id, key);
-        const old = byId.get(node.id);
-        if (!old || old.parentId !== node.parentId) return node;
-        if (nodeKeys.current.get(node.id) === key) return old;
-        return { ...node, position: old.position };
-      });
+      const next = decorate(graph.nodes);
+      const keys = new Map(next.map((node) => [node.id, nodeKey(node)]));
+      const merged = fresh
+        ? next
+        : keepPositions(
+            previous,
+            next,
+            (node) => nodeKeys.current.get(node.id) === keys.get(node.id),
+            created,
+          );
       nodeKeys.current = keys;
-      return next;
+      return merged;
     });
     setEdges((previous) =>
       sameEdges(previous, graph.edges) ? previous : graph.edges,
     );
-  }, [resources, relations, selected, query, setNodes, setEdges, decorate]);
+    // Placed once: later it keeps its position like any other node, and a
+    // block with the same name typed later is laid out normally.
+    if (created && graph.nodes.some((node) => node.id === created))
+      onPlaced?.(created);
+  }, [
+    resources,
+    relations,
+    selected,
+    query,
+    setNodes,
+    setEdges,
+    decorate,
+    project,
+    created,
+    onPlaced,
+  ]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fitView({ padding: 0.1, duration: 250 });
@@ -341,6 +373,11 @@ function Graph({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelect(node.id)}
+        onPaneContextMenu={(event) => {
+          if (!onCreate) return;
+          event.preventDefault();
+          onCreate();
+        }}
         fitView
         fitViewOptions={{ padding: 0.1 }}
         onlyRenderVisibleElements={resources.length > 150}
@@ -365,6 +402,15 @@ function Graph({
           maskColor="rgba(238,243,248,0.65)"
         />
       </ReactFlow>
+      {onCreate && (
+        <button
+          className="canvas-create"
+          title="Crear recurso (también con clic derecho en el lienzo)"
+          onClick={onCreate}
+        >
+          <Plus size={15} /> Crear recurso
+        </button>
+      )}
       <div className="canvas-controls">
         <button
           aria-label="Alejar"

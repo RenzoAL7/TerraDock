@@ -4,7 +4,7 @@ Esta entrega permite demostrar el flujo de un IDE local y sirve de base para des
 
 ## Demo pública en el navegador
 
-La entrada `/demo/` permite editar un único `main.tf` en memoria, seleccionar recursos, modificar literales compatibles, navegar al código y descargar el resultado. Reutiliza el parser y el editor locales compilados a WebAssembly. No abre carpetas ni llama al servidor Go; los cambios se pierden al recargar. Tiene límites de 64 KiB, 1000 líneas y 60 declaraciones. Si el HCL es inválido, muestra diagnósticos y conserva la última vista válida identificada como tal, con el inspector deshabilitado.
+La entrada `/demo/` permite editar un único `main.tf` en memoria, seleccionar recursos, modificar literales compatibles, crear recursos de la paleta al final del archivo, navegar al código y descargar el resultado. Reutiliza el parser y el editor locales compilados a WebAssembly. No abre carpetas ni llama al servidor Go; los cambios se pierden al recargar. Tiene límites de 64 KiB, 1000 líneas y 60 declaraciones. Si el HCL es inválido, muestra diagnósticos y conserva la última vista válida identificada como tal, con el inspector deshabilitado.
 
 La [guía de la demo pública](browser-demo.md) describe las acciones y la compilación. Las limitaciones de interpretación y ejecución de este documento también se aplican a esa entrada. Los límites de archivos, guardado y carpetas que siguen corresponden únicamente a la aplicación local.
 
@@ -17,6 +17,7 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 | Expresiones | Se conserva la expresión original; no se ejecutan funciones de Terraform ni consultas de proveedores |
 | Editor | Edición de texto y guardado mediante el servicio local |
 | Inspector | Edición limitada a valores literales compatibles; expresiones calculadas en lectura |
+| Crear recursos | Paleta de 9 tipos AWS con sus atributos obligatorios; el bloque se añade al final de un `.tf` existente (como borrador) o en un archivo `.tf` nuevo |
 | Carpetas | Navegación y apertura dentro de la raíz permitida por `--root` |
 | Diagrama | Vista derivada de la configuración; relaciones estáticas, no estado de ejecución |
 | Ejemplo | Configuración didáctica para probar la interfaz; sin despliegue AWS verificado |
@@ -27,7 +28,7 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 - Cada archivo admite hasta **2 MiB** y el conjunto hasta **20 MiB**; un MiB equivale a 1.048.576 bytes. Abrir o guardar contenido que exceda estos límites devuelve un error.
 - El selector devuelve hasta 1.000 subcarpetas por ubicación y omite `.git`, `.terraform`, `node_modules` y enlaces simbólicos.
 - Las carpetas seleccionadas deben quedar dentro de la raíz canónica de `--root`. Se rechazan escapes de ruta y componentes simbólicos dentro de esa raíz; un archivo `.tf` enlazado simbólicamente impide abrir ese módulo.
-- Solo se guardan archivos regulares `.tf` ya presentes en el módulo abierto. Esta demo no crea, renombra ni elimina archivos desde la interfaz.
+- Solo se guardan archivos regulares `.tf` ya presentes en el módulo abierto. La única forma de crear un archivo es **Crear recurso → Archivo nuevo…**: un nombre `.tf` sin carpetas ni espacios, junto a los demás archivos del módulo, que nunca reemplaza un archivo existente (ni sigue un enlace simbólico). No se renombran ni eliminan archivos desde la interfaz.
 - Si otro programa crea, renombra o borra un `.tf`, el proyecto se actualiza solo. Un borrador de un archivo que ya no existe (por ejemplo, tras renombrarlo) queda huérfano: no se puede guardar con el nombre anterior ni vuelve a crear ese archivo, y la aplicación ofrece descargarlo.
 - Estas comprobaciones delimitan el acceso normal de la aplicación; no constituyen un sandbox del sistema operativo frente a otros procesos locales.
 
@@ -73,6 +74,16 @@ Los borradores sin guardar se copian al **perfil del navegador** (IndexedDB) uno
 - La copia no sustituye a guardar: un cierre inesperado puede perder lo escrito en los últimos instantes.
 
 Si otra pestaña cambia el proyecto, los borradores conservan su identidad original y no pueden guardarse silenciosamente sobre el nuevo proyecto. Las pestañas del mismo navegador se avisan (con `BroadcastChannel`, sin salir del navegador) cuando una tiene un borrador sin guardar de un archivo que la otra está mirando; ese borrador no se ofrece para restaurar mientras la otra pestaña siga abierta. Si una pestaña se cierra de forma inesperada, el aviso puede quedar hasta recargar.
+
+### Crear un recurso desde el diagrama
+
+- El bloque siempre se añade **al final** del archivo elegido; lo anterior se conserva byte a byte (también los saltos de línea CRLF). No se elige la posición ni se reordenan bloques.
+- En un **archivo existente**, la inserción se aplica sobre su borrador si existe y, si no, sobre su versión guardada; el resultado es un borrador que llega al disco con el autoguardado o al guardar (⌘/Ctrl + S). Si un guardado de ese archivo termina mientras se prepara el bloque, se vuelve a preparar sobre la revisión recién guardada. El servidor rechaza la operación si el archivo cambió en disco desde la revisión del borrador, y la paleta no ofrece archivos cuyo borrador está en conflicto.
+- Se rechaza un nombre que no sea un identificador HCL ASCII (letras, dígitos, `_` o `-`, empezando por letra o `_`, hasta 64 caracteres) y un `resource` con el mismo tipo y nombre en cualquier archivo `.tf` guardado del módulo. Un duplicado en el borrador sin guardar de **otro** archivo se detecta después, como diagnóstico, y pausa el autoguardado.
+- El archivo de destino debe tener HCL válido. Un **archivo nuevo** se escribe en disco en cuanto se pulsa **Crear recurso**, sin pasar por borrador (en el ejemplo en memoria, solo en memoria); para quitarlo hay que borrarlo fuera de TerraDock, porque la interfaz no elimina archivos. Toma los permisos del primer `.tf` de la carpeta (o `0644` si no hay ninguno), siempre con lectura y escritura para el propietario para poder guardarlo después, y su nombre no puede ser un nombre de dispositivo de Windows (`con`, `prn`, `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`, con cualquier extensión) para que el módulo siga siendo portable.
+- Las plantillas llevan los atributos obligatorios y algunos valores de partida (por ejemplo `t3.micro` o `10.0.1.0/24`), no recomendaciones de producción. El `bucket_prefix` de S3 se deriva del nombre en minúsculas, se recorta a los 37 caracteres que admite AWS y lleva delante `bucket-` si empezaría por un prefijo que S3 reserva (`xn--`, `sthree-`, `amzn-s3-demo-`); el diálogo avisa de ambos cambios. La base de datos RDS se crea cifrada (`storage_encrypted = true`) y destruible, para poder crearla y borrarla en Floci: `deletion_protection = false` y `skip_final_snapshot = true`. El diálogo lo recuerda: para AWS real, activa `deletion_protection` y quita `skip_final_snapshot`. Una referencia obligatoria sin destino (una subred sin VPC, una Lambda sin rol, una EC2 sin variable de AMI) se omite y el diálogo lo avisa: hay que completarla en el código antes de desplegar.
+- **Deshacer** solo quita el bloque si el archivo sigue exactamente como quedó tras crearlo; si no, se quita en el código (⌘/Ctrl + Z en el editor también funciona mientras ese archivo está abierto).
+- No se conecta arrastrando de un nodo a otro: las referencias se eligen en el diálogo al crear, o se escriben en el código.
 
 Las propiedades no compatibles se editan desde el código. Una propiedad que referencia una variable no debe reemplazarse silenciosamente por un literal desde el inspector.
 

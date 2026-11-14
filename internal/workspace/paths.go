@@ -4,8 +4,10 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -192,6 +194,109 @@ func writeFile(root, dir, name, content, expectedRevision string) error {
 		return problem("io_error", "No se puede reemplazar el archivo.")
 	}
 	return nil
+}
+
+// validNewFileName accepts a plain file name for a new Terraform file: no
+// directories, no hidden files, only portable characters, ending in .tf.
+func validNewFileName(name string) bool {
+	if len(name) < 4 || len(name) > 128 || !strings.HasSuffix(name, ".tf") || name[0] == '.' || name[0] == '-' {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
+			return false
+		}
+	}
+	stem, _, _ := strings.Cut(strings.ToLower(name), ".")
+	return !windowsReserved(stem) && filepath.IsLocal(name) && filepath.Base(name) == name
+}
+
+// windowsReserved reports device names Windows reserves with any extension
+// (nul.tf is the NUL device there), rejected on every system so a project
+// stays portable.
+func windowsReserved(stem string) bool {
+	switch stem {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(stem) == 4 && (strings.HasPrefix(stem, "com") || strings.HasPrefix(stem, "lpt")) && stem[3] >= '0' && stem[3] <= '9'
+}
+
+// beforeCreate lets tests act inside createFile between the path check and
+// the creation. It does nothing outside tests.
+var beforeCreate = func() {}
+
+// createFile writes a file that must not exist yet, inside the confined
+// project directory. It resolves the path through an os.Root of the allowed
+// root, so a directory swapped for a symlink after the check cannot take the
+// write outside it, and O_EXCL makes creation fail instead of replacing a file
+// (or following a symlink) that appeared since the project was read. The new
+// file takes the permissions of the first .tf next to it, or 0644, and is
+// always readable and writable by its owner.
+func createFile(root, dir, name, content string) error {
+	safe, err := safePath(root, dir)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, safe)
+	if err != nil {
+		return problem("forbidden_path", "La carpeta debe estar dentro de la raíz permitida.")
+	}
+	beforeCreate()
+	allowed, err := os.OpenRoot(root)
+	if err != nil {
+		return problem("io_error", "No se puede abrir la raíz permitida.")
+	}
+	defer allowed.Close()
+	path := filepath.Join(rel, name)
+	perm := neighbourPerm(allowed, rel)
+	f, err := allowed.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return problem("file_exists", "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.")
+		}
+		return problem("io_error", "No se puede crear el archivo.")
+	}
+	// The umask may have narrowed the mode; match the neighbour exactly.
+	err = f.Chmod(perm)
+	if err == nil {
+		_, err = io.WriteString(f, content)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = allowed.Remove(path)
+		return problem("io_error", "No se puede escribir el archivo nuevo.")
+	}
+	return nil
+}
+
+// neighbourPerm returns the mode of the first regular .tf in dir, plus owner
+// read and write: TerraDock must be able to save the file it just created.
+func neighbourPerm(allowed *os.Root, dir string) fs.FileMode {
+	folder, err := allowed.Open(dir)
+	if err != nil {
+		return 0o644
+	}
+	defer folder.Close()
+	entries, err := folder.ReadDir(-1)
+	if err != nil {
+		return 0o644
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".tf") {
+			continue
+		}
+		if info, err := entry.Info(); err == nil {
+			return info.Mode().Perm() | 0o600
+		}
+	}
+	return 0o644
 }
 
 func fingerprint(files map[string]string) string {

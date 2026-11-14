@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { afterFileSave, settledProperties, withDraft } from "./drafts";
+import {
+  afterFileSave,
+  liveFile,
+  sameText,
+  settledProperties,
+  withDraft,
+} from "./drafts";
 import type { Draft, Project, Property, Resource } from "../lib/types";
 import type { PropertyDraft } from "../features/inspector/Inspector";
 
@@ -137,5 +143,48 @@ describe("withDraft", () => {
     expect(second["main.tf"].baseRevision).toBe("r1");
     expect(second["main.tf"].baseContent).toBe("disk");
     expect(withDraft(second, "main.tf", "disk", saved, "p")).toEqual({});
+  });
+});
+
+describe("liveFile", () => {
+  const disk = snapshot("r1");
+  disk.files[0].content = "disk";
+  const draft: Draft = {
+    projectId: "p",
+    baseRevision: "r1",
+    baseContent: "disk",
+    content: "typed",
+  };
+  it("prefers this project's draft and falls back to disk", () => {
+    expect(liveFile(disk, { "main.tf": draft }, "main.tf")).toMatchObject({
+      content: "typed",
+      baseRevision: "r1",
+    });
+    expect(
+      liveFile(disk, { "main.tf": { ...draft, projectId: "old" } }, "main.tf"),
+    ).toMatchObject({ content: "disk", baseRevision: "r1" });
+    expect(liveFile(disk, {}, "missing.tf")).toBeNull();
+    expect(liveFile(null, {}, "main.tf")).toBeNull();
+  });
+  it("sees a save that landed during a request", () => {
+    const before = liveFile(disk, { "main.tf": draft }, "main.tf")!;
+    // The draft was saved: it is gone and disk holds its text at r2.
+    const saved = snapshot("r2");
+    saved.files[0].content = "typed";
+    const now = liveFile(saved, {}, "main.tf");
+    expect(sameText(before, now)).toBe(true);
+    expect(now).toMatchObject({ baseRevision: "r2" });
+    expect(now?.file.revision).toBe("r2");
+  });
+  it("rejects a result computed on other text or another project", () => {
+    const before = liveFile(disk, { "main.tf": draft }, "main.tf")!;
+    expect(
+      sameText(
+        before,
+        liveFile(disk, { "main.tf": { ...draft, content: "more" } }, "main.tf"),
+      ),
+    ).toBe(false);
+    expect(sameText(before, { ...before, projectId: "q" })).toBe(false);
+    expect(sameText(before, null)).toBe(false);
   });
 });

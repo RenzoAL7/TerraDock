@@ -1,4 +1,4 @@
-import type { Draft, Project, Resource } from "../lib/types";
+import type { Draft, Project, Resource, SourceFile } from "../lib/types";
 import {
   propertyInputValue,
   propertyKey,
@@ -86,4 +86,47 @@ export function withDraft(
         projectId,
       };
   return next;
+}
+
+/** What a file shows right now: its draft in this project, or its disk text. */
+export interface LiveFile {
+  projectId: string;
+  file: SourceFile;
+  content: string;
+  /** Disk revision the content is based on. */
+  baseRevision: string;
+}
+
+/**
+ * Read the live text of a file. Edits that await the server call it again
+ * after the response: a save or a reload may have landed meanwhile, and the
+ * result must be compared with (and stored against) the file as it is now.
+ */
+export function liveFile(
+  project: Project | null | undefined,
+  drafts: Record<string, Draft>,
+  path: string,
+): LiveFile | null {
+  const file = project?.files.find((f) => f.path === path);
+  if (!project || !file) return null;
+  const draft =
+    drafts[path]?.projectId === project.id ? drafts[path] : undefined;
+  return {
+    projectId: project.id,
+    file,
+    content: draft ? draft.content : file.content,
+    baseRevision: draft ? draft.baseRevision : file.revision,
+  };
+}
+
+/** Same project and same text: a result computed on `before` applies to `now`. */
+export function sameText(
+  before: LiveFile,
+  now: LiveFile | null,
+): now is LiveFile {
+  return (
+    !!now &&
+    now.projectId === before.projectId &&
+    now.content === before.content
+  );
 }

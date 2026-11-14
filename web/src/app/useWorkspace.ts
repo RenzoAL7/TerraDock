@@ -101,37 +101,45 @@ export function useWorkspace() {
     };
   }, []);
 
-  const perform = useCallback(async (work: () => Promise<Project>) => {
-    // State updates render later; this ref closes the double-click window now.
-    if (busyRef.current) return null;
-    if (!connectedRef.current) {
-      setError(
-        "Espera a que se restablezca la conexión local antes de guardar.",
-      );
-      return null;
-    }
-    busyRef.current = true;
-    setBusy(true);
-    setError("");
-    const token = sessionRef.current?.token;
-    try {
-      const next = await work();
-      if (!activeRef.current || token !== sessionRef.current?.token)
+  // `report` shows the failure where the action was started (a dialog keeps
+  // its own message); by default it is the app-wide error.
+  const perform = useCallback(
+    async (
+      work: () => Promise<Project>,
+      report: (message: string) => void = setError,
+    ) => {
+      // State updates render later; this ref closes the double-click window now.
+      if (busyRef.current) return null;
+      if (!connectedRef.current) {
+        report(
+          "Espera a que se restablezca la conexión local antes de guardar.",
+        );
         return null;
-      const accepted = inbox.current.receive(next);
-      if (accepted) setProject(accepted);
-      // Rebase drafts against this exact write's revision, never against a
-      // newer SSE update from another editor. The UI still keeps that newer
-      // snapshot so any competing edit produces a visible revision conflict.
-      return mutationResult(accepted, next);
-    } catch (reason) {
-      if (activeRef.current) setError(errorMessage(reason));
-      return null;
-    } finally {
-      busyRef.current = false;
-      if (activeRef.current) setBusy(false);
-    }
-  }, []);
+      }
+      busyRef.current = true;
+      setBusy(true);
+      report("");
+      const token = sessionRef.current?.token;
+      try {
+        const next = await work();
+        if (!activeRef.current || token !== sessionRef.current?.token)
+          return null;
+        const accepted = inbox.current.receive(next);
+        if (accepted) setProject(accepted);
+        // Rebase drafts against this exact write's revision, never against a
+        // newer SSE update from another editor. The UI still keeps that newer
+        // snapshot so any competing edit produces a visible revision conflict.
+        return mutationResult(accepted, next);
+      } catch (reason) {
+        if (activeRef.current) report(errorMessage(reason));
+        return null;
+      } finally {
+        busyRef.current = false;
+        if (activeRef.current) setBusy(false);
+      }
+    },
+    [],
+  );
   return { project, session, error, setError, connected, busy, perform };
 }
 

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { publicDevPort, publicPreviewPort } from "./ports";
 
 // Independent entry: never includes the local app, its proxy, or its public assets.
 export default defineConfig({
@@ -9,8 +10,8 @@ export default defineConfig({
   publicDir: false,
   appType: "mpa",
   plugins: [react()],
-  server: { host: "127.0.0.1", port: 5174, strictPort: true },
-  preview: { host: "127.0.0.1", port: 4174, strictPort: true },
+  server: { host: "127.0.0.1", port: publicDevPort, strictPort: true },
+  preview: { host: "127.0.0.1", port: publicPreviewPort, strictPort: true },
   build: {
     assetsInlineLimit: 0,
     rollupOptions: {

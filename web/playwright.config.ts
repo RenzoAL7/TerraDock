@@ -1,5 +1,6 @@
 import { defineConfig } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { e2ePort } from "./ports";
 
 export default defineConfig({
   testDir: "./tests",
@@ -13,7 +14,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:7332",
+    baseURL: `http://127.0.0.1:${e2ePort}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -31,7 +32,7 @@ export default defineConfig({
   webServer: {
     command: "node scripts/e2e-server.mjs",
     cwd: fileURLToPath(new URL("..", import.meta.url)),
-    url: "http://127.0.0.1:7332/api/session",
+    url: `http://127.0.0.1:${e2ePort}/api/session`,
     timeout: 180_000,
     stdout: "pipe",
     reuseExistingServer: false,

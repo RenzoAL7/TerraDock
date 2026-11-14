@@ -4,7 +4,9 @@ import {
   buildGraph,
   categoryNames,
   laneOf,
+  keepPositions,
   nodeSignature,
+  placeAdded,
   shortType,
 } from "./graph";
 
@@ -344,5 +346,86 @@ describe("nodeSignature", () => {
     expect(nodeSignature(withProperty(undefined, "t3.large"))).not.toBe(
       nodeSignature(withProperty(undefined, "t3.micro")),
     );
+  });
+});
+
+describe("placing added nodes", () => {
+  it("puts new top-level nodes to the right of the kept ones, without overlap", () => {
+    const { nodes } = buildGraph(
+      [
+        resource("aws_vpc.main"),
+        resource("aws_subnet.app", "aws_vpc.main"),
+        resource("aws_s3_bucket.logs"),
+        resource("aws_vpc.edge"),
+      ],
+      [],
+      "",
+    );
+    const placed = placeAdded(
+      nodes,
+      new Set(["aws_vpc.edge", "aws_s3_bucket.logs"]),
+    );
+    const kept = placed.find((n) => n.id === "aws_vpc.main")!;
+    const right = kept.position.x + Number(kept.style!.width);
+    const vpc = placed.find((n) => n.id === "aws_vpc.edge")!;
+    const bucket = placed.find((n) => n.id === "aws_s3_bucket.logs")!;
+    expect(vpc.position.x).toBeGreaterThan(right);
+    expect(bucket.position.x).toBe(vpc.position.x);
+    // Stacked in the declaration order, one below the other.
+    const [first, second] = [vpc, bucket].sort(
+      (a, b) => a.position.y - b.position.y,
+    );
+    expect(second.position.y).toBeGreaterThanOrEqual(
+      first.position.y + Number(first.style!.height),
+    );
+    // Nested and kept nodes are untouched.
+    expect(placed.find((n) => n.id === "aws_subnet.app")).toBe(
+      nodes.find((n) => n.id === "aws_subnet.app"),
+    );
+    expect(kept).toBe(nodes.find((n) => n.id === "aws_vpc.main"));
+  });
+  it("leaves the layout alone when every node is new", () => {
+    const { nodes } = buildGraph([resource("aws_vpc.main")], [], "");
+    expect(placeAdded(nodes, new Set(["aws_vpc.main"]))).toBe(nodes);
+  });
+});
+
+describe("keeping positions across live edits", () => {
+  const layout = (ids: string[]) =>
+    buildGraph(
+      ids.map((id) => resource(id)),
+      [],
+      "",
+    ).nodes;
+  const moved = (nodes: ReturnType<typeof layout>) =>
+    nodes.map((n) => ({ ...n, position: { x: n.position.x + 7, y: 3 } }));
+  it("gives a renamed node its slot in the layout, not a new column", () => {
+    const before = moved(layout(["aws_vpc.main", "aws_s3_bucket.logs"]));
+    const next = layout(["aws_vpc.core", "aws_s3_bucket.logs"]);
+    const merged = keepPositions(before, next, () => false);
+    expect(merged.find((n) => n.id === "aws_vpc.core")!.position).toEqual(
+      next.find((n) => n.id === "aws_vpc.core")!.position,
+    );
+    // The untouched node keeps where it was on screen.
+    expect(merged.find((n) => n.id === "aws_s3_bucket.logs")!.position).toEqual(
+      before.find((n) => n.id === "aws_s3_bucket.logs")!.position,
+    );
+  });
+  it("moves only the resource this client created", () => {
+    const before = moved(layout(["aws_vpc.main"]));
+    const next = layout(["aws_vpc.edge", "aws_vpc.main", "aws_s3_bucket.x"]);
+    const merged = keepPositions(before, next, () => true, "aws_vpc.edge");
+    const main = before[0];
+    const edge = merged.find((n) => n.id === "aws_vpc.edge")!;
+    // Beside every other top-level node, not on top of one.
+    for (const n of merged.filter((n) => n !== edge && !n.parentId))
+      expect(edge.position.x).toBeGreaterThan(
+        n.position.x + Number(n.style!.width),
+      );
+    expect(merged.find((n) => n.id === "aws_s3_bucket.x")!.position).toEqual(
+      next.find((n) => n.id === "aws_s3_bucket.x")!.position,
+    );
+    // Unchanged nodes are the same objects, so React Flow skips them.
+    expect(merged.find((n) => n.id === "aws_vpc.main")).toBe(main);
   });
 });

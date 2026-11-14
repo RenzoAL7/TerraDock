@@ -1,5 +1,5 @@
-// Package publicdemo exposes only in-memory parsing and literal editing to the
-// browser. It does not import the server, workspace, filesystem or Terraform CLI.
+// Package publicdemo exposes only in-memory parsing, literal editing and
+// resource creation to the browser. It does not import the server, workspace, filesystem or Terraform CLI.
 package publicdemo
 
 import (
@@ -17,6 +17,8 @@ type Request struct {
 	ResourceID string `json:"resourceId,omitempty"`
 	Property   string `json:"property,omitempty"`
 	Value      any    `json:"value,omitempty"`
+	// Resource is the block to append for the "create" operation.
+	Resource *terraform.NewResource `json:"resource,omitempty"`
 }
 
 type Response struct {
@@ -45,6 +47,18 @@ func Handle(request Request) Response {
 		}
 		if len(content) > MaxSourceBytes {
 			return Response{Error: "El cambio supera el límite de 64 KiB de la demo."}
+		}
+	case "create":
+		if request.Resource == nil {
+			return Response{Error: "Elige el tipo y el nombre del recurso."}
+		}
+		var err error
+		content, _, err = terraform.InsertResource(map[string]string{"main.tf": content}, "main.tf", *request.Resource)
+		if err != nil {
+			return Response{Error: strings.ToUpper(err.Error()[:1]) + err.Error()[1:] + "."}
+		}
+		if len(content) > MaxSourceBytes || strings.Count(content, "\n") > 1000 {
+			return Response{Error: "El cambio supera el límite de 64 KiB y 1000 líneas de la demo."}
 		}
 	default:
 		return Response{Error: "Operación no disponible en esta demo."}

@@ -4,6 +4,24 @@ Objetivo: un cambio en archivo, código o inspector llega al diagrama en menos d
 1 s con 300 recursos. Lo comprueba la prueba e2e
 `con 300 recursos, archivo, código e inspector llegan al diagrama en menos de 1 s`.
 
+## Medición tras «crear desde el diagrama» (2026-11-13, MacBook ARM, Chromium)
+
+Misma prueba e2e, tres corridas por versión (`--repeat-each=3`), sin otras
+pruebas de navegador en marcha. Mediana y, entre paréntesis, las tres corridas.
+La rama se midió dos veces: antes y después de `main`.
+
+| Camino          | `main` (e50ca5b)         | `feat/crear-desde-diagrama`, 1.ª | 2.ª                      |
+| --------------- | -----------------------: | -------------------------------: | -----------------------: |
+| Archivo externo |     55 ms (53 · 56 · 55) |             54 ms (55 · 53 · 54) |     54 ms (54 · 53 · 55) |
+| Inspector       | 230 ms (230 · 229 · 232) |         236 ms (228 · 237 · 236) | 230 ms (230 · 230 · 229) |
+| Código          | 140 ms (140 · 139 · 151) |         146 ms (141 · 146 · 147) | 140 ms (140 · 149 · 138) |
+
+La segunda medición de la rama coincide con `main`; la primera queda 6 ms por
+encima en inspector y código, dentro de la variación entre corridas (139–151 ms
+en el código de `main`). Crear un recurso no añade trabajo a esos caminos: la
+inserción es una petición aparte, y el diagrama solo hace una comprobación
+extra por nodo (si es nuevo) para colocar a la derecha los que aparecen.
+
 ## Medición (2026-11-13, MacBook ARM, Chromium)
 
 Tiempo desde el cambio hasta que el nodo muestra el valor nuevo, con 300

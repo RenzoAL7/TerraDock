@@ -67,7 +67,20 @@ git diff --check
 - `make test`: pruebas Go con detector de carreras y pruebas unitarias del frontend.
 - `make e2e`: Playwright; su configuración levanta los servicios necesarios y define puertos propios para las pruebas.
 
-Las pruebas de navegador compilan el frontend y el ejecutable, y ejecutan la aplicación desde un único servidor Go en `127.0.0.1:7332`. Así verifican los assets de producción y el protocolo de la API que usa el build local. Ese puerto debe estar libre antes de ejecutar la suite.
+Las pruebas de navegador compilan el frontend y el ejecutable, y ejecutan la aplicación desde un único servidor Go en `127.0.0.1:7332`. Así verifican los assets de producción y el protocolo de la API que usa el build local. Ese puerto debe estar libre antes de ejecutar la suite: si el servidor no logra enlazarlo, o termina antes de que Playwright lo detenga, `scripts/e2e-server.mjs` sale con error en vez de dejar que las pruebas hablen con otro proceso.
+
+Para ejecutar dos suites a la vez en la misma máquina (por ejemplo, desde dos worktrees), cambia los puertos con variables de entorno; `web/ports.ts` las valida y las comparten la configuración de Playwright, la de Vite y las pruebas:
+
+| Variable | Por defecto | Uso |
+| --- | --- | --- |
+| `TERRADOCK_E2E_PORT` | `7332` | Servidor Go de `make e2e` |
+| `TERRADOCK_PUBLIC_PREVIEW_PORT` | `4174` | Portada compilada de `make public-e2e` (`vite preview`) |
+| `TERRADOCK_PUBLIC_DEV_PORT` | `5174` | Entrada de desarrollo de la portada (`vite`, también en `make public-dev`) |
+
+```sh
+TERRADOCK_E2E_PORT=7342 make e2e
+TERRADOCK_PUBLIC_PREVIEW_PORT=4184 TERRADOCK_PUBLIC_DEV_PORT=5184 make public-e2e
+```
 
 El runner crea una raíz temporal exclusiva y la elimina al terminar. Los escenarios comprueban edición en ambas direcciones, cambios externos, HCL inválido, conflictos de revisión y escritura durante una respuesta de guardado demorada. Los documentos completos se pegan mediante el portapapeles del contexto de Chromium de prueba para reproducir el comportamiento de Monaco. Se conserva el agente de usuario nativo del navegador para que los atajos de teclado coincidan con el sistema operativo.
 

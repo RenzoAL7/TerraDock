@@ -436,3 +436,108 @@ func (m *Manager) Files() (Snapshot, map[string]string) {
 	}
 	return m.current, files
 }
+
+// ResourceDraft inserts a new resource block at the end of unsaved content and
+// returns the new text and the line where the block starts. It never writes:
+// the result becomes a draft and is persisted by the usual revision-checked
+// save. expected is the revision the content is based on; a file that changed
+// since is rejected so the block is never added on top of an outdated version.
+func (m *Manager) ResourceDraft(projectID, path, content, expected string, spec terraform.NewResource) (string, int, error) {
+	m.mu.Lock()
+	if projectID == "" || projectID != m.current.ID {
+		m.mu.Unlock()
+		return "", 0, problem("project_conflict", "El proyecto abierto cambió. Revisa el proyecto actual.")
+	}
+	saved, known := m.files[path]
+	files := make(map[string]string, len(m.files))
+	for name, body := range m.files {
+		files[name] = body
+	}
+	m.mu.Unlock()
+	if !known {
+		return "", 0, problem("not_found", "El archivo no pertenece al proyecto abierto.")
+	}
+	if !strings.HasSuffix(path, ".tf") {
+		return "", 0, problem("invalid_path", "Solo se pueden crear recursos en archivos .tf.")
+	}
+	if expected == "" || expected != revision(saved) {
+		return "", 0, problem("revision_conflict", "El archivo cambió en disco. Revisa la versión actual antes de crear el recurso.")
+	}
+	if len(content) > MaxFileBytes {
+		return "", 0, problem("too_large", "El archivo supera el límite de 2 MiB.")
+	}
+	files[path] = content
+	updated, line, err := terraform.InsertResource(files, path, spec)
+	if err != nil {
+		return "", 0, resourceProblem(err)
+	}
+	if err := withinLimits(files, path, updated); err != nil {
+		return "", 0, err
+	}
+	return updated, line, nil
+}
+
+// CreateResourceFile writes a new .tf file, next to the open project's files,
+// that holds only the new resource. It never replaces an existing file.
+func (m *Manager) CreateResourceFile(projectID, path string, spec terraform.NewResource) (Snapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if projectID == "" || projectID != m.current.ID {
+		return Snapshot{}, problem("project_conflict", "El proyecto abierto cambió. Revisa el proyecto actual antes de guardar.")
+	}
+	if !validNewFileName(path) {
+		return Snapshot{}, problem("invalid_path", "El archivo nuevo debe ser un nombre .tf sin carpetas, con letras, dígitos, _, - o puntos.")
+	}
+	if _, exists := m.files[path]; exists {
+		return Snapshot{}, problem("file_exists", "Ya existe un archivo con ese nombre. Elígelo en la lista o usa otro nombre.")
+	}
+	if len(m.files) >= MaxFiles {
+		return Snapshot{}, problem("too_large", "El proyecto supera el límite de 100 archivos Terraform.")
+	}
+	files := make(map[string]string, len(m.files)+1)
+	for name, body := range m.files {
+		files[name] = body
+	}
+	files[path] = ""
+	content, _, err := terraform.InsertResource(files, path, spec)
+	if err != nil {
+		return Snapshot{}, resourceProblem(err)
+	}
+	if err := withinLimits(files, path, content); err != nil {
+		return Snapshot{}, err
+	}
+	if m.current.Mode == "local" {
+		if err := createFile(m.root, m.current.Path, path, content); err != nil {
+			m.refreshLocked()
+			return Snapshot{}, err
+		}
+	}
+	files[path] = content
+	m.apply(files, true)
+	return m.current, nil
+}
+
+// resourceProblem gives InsertResource's validation errors a stable code.
+func resourceProblem(err error) error {
+	message := err.Error()
+	if rest, duplicate := strings.CutPrefix(message, "ya existe "); duplicate {
+		return problem("duplicate_resource", "Ya existe "+rest+". Elige otro nombre.")
+	}
+	return problem("invalid_resource", strings.ToUpper(message[:1])+message[1:]+".")
+}
+
+func withinLimits(files map[string]string, path, content string) error {
+	if len(content) > MaxFileBytes {
+		return problem("too_large", "El archivo supera el límite de 2 MiB.")
+	}
+	total := len(content)
+	for name, body := range files {
+		if name != path {
+			total += len(body)
+		}
+	}
+	if total > MaxProjectBytes {
+		return problem("too_large", "El proyecto supera el límite de 20 MiB.")
+	}
+	return nil
+}
