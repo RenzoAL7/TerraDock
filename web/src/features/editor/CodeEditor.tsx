@@ -1,8 +1,31 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import type { Diagnostic } from "../../lib/types";
 import { minimalEdit } from "./minimalEdit";
 import { monaco } from "./monacoSetup";
+import { PendingReveal } from "./reveal";
+
+/** Apply a change from outside as one minimal, undoable edit. */
+function applyEdit(
+  editor: monaco.editor.IStandaloneCodeEditor,
+  model: monaco.editor.ITextModel,
+  current: string,
+  next: string,
+) {
+  const edit = minimalEdit(current, next);
+  editor.pushUndoStop();
+  editor.executeEdits("terradock", [
+    {
+      range: monaco.Range.fromPositions(
+        model.getPositionAt(edit.start),
+        model.getPositionAt(edit.end),
+      ),
+      text: edit.text,
+      forceMoveMarkers: true,
+    },
+  ]);
+  editor.pushUndoStop();
+}
 
 export default function CodeEditor({
   path,
@@ -88,37 +111,35 @@ export default function CodeEditor({
   // minimal edit, so scroll position, cursor and undo history survive.
   const valueRef = useRef(value);
   valueRef.current = value;
+  const [pendingReveal] = useState(() => new PendingReveal());
+  const revealAt = useCallback(
+    (editor: monaco.editor.IStandaloneCodeEditor, target: number) => {
+      if (target === 0) return;
+      editor.revealLineInCenter(target);
+      editor.setPosition({ lineNumber: target, column: 1 });
+    },
+    [],
+  );
   const syncValue = useCallback(() => {
     const editor = editorRef.current,
       model = editor?.getModel();
     if (!editor || !model) return;
     const next = valueRef.current,
       current = model.getValue();
-    if (current === next) return;
-    const edit = minimalEdit(current, next);
-    editor.pushUndoStop();
-    editor.executeEdits("terradock", [
-      {
-        range: monaco.Range.fromPositions(
-          model.getPositionAt(edit.start),
-          model.getPositionAt(edit.end),
-        ),
-        text: edit.text,
-        forceMoveMarkers: true,
-      },
-    ]);
-    editor.pushUndoStop();
-  }, []);
+    if (current !== next) applyEdit(editor, model, current, next);
+    // A line asked for before this text arrived exists now.
+    revealAt(editor, pendingReveal.take(model.getLineCount()));
+  }, [pendingReveal, revealAt]);
   useEffect(syncValue, [syncValue, value]);
   // After syncing the value: a line added by the same update (a resource
-  // created from the diagram) must exist before it is revealed.
+  // created from the diagram) must exist before it is revealed. If it does
+  // not exist yet, the next sync reveals it.
   useEffect(() => {
-    const editor = editorRef.current;
-    if (editor && line > 0) {
-      editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column: 1 });
-    }
-  }, [line, path, revealKey]);
+    const editor = editorRef.current,
+      model = editor?.getModel();
+    if (editor && model)
+      revealAt(editor, pendingReveal.request(line, model.getLineCount()));
+  }, [line, path, revealKey, pendingReveal, revealAt]);
   return (
     <Editor
       path={path}
