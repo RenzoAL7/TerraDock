@@ -153,6 +153,10 @@ export default function App() {
   const [created, setCreated] = useState<Created | null>(null);
   // The last resource created here: the diagram places it in free space.
   const [placeId, setPlaceId] = useState("");
+  const placed = useCallback(
+    (id: string) => setPlaceId((current) => (current === id ? "" : current)),
+    [],
+  );
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [properties, setProperties] = useState<Record<string, PropertyDraft>>(
     {},
@@ -1205,6 +1209,7 @@ export default function App() {
                 resetKey={`${project.id}:${view}`}
                 project={project.id}
                 created={placeId}
+                onPlaced={placed}
                 marks={marks}
                 onCreate={() => {
                   setCreateError("");

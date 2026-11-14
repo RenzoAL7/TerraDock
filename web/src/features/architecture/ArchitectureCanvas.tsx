@@ -225,6 +225,8 @@ interface Props {
   project?: string;
   /** A resource this client just created, placed beside the diagram. */
   created?: string;
+  /** The created resource is on the canvas: stop placing it. */
+  onPlaced?: (id: string) => void;
 }
 function Graph({
   resources,
@@ -238,6 +240,7 @@ function Graph({
   onCreate,
   project = "",
   created = "",
+  onPlaced,
 }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ResourceNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -328,6 +331,10 @@ function Graph({
     setEdges((previous) =>
       sameEdges(previous, graph.edges) ? previous : graph.edges,
     );
+    // Placed once: later it keeps its position like any other node, and a
+    // block with the same name typed later is laid out normally.
+    if (created && graph.nodes.some((node) => node.id === created))
+      onPlaced?.(created);
   }, [
     resources,
     relations,
@@ -338,6 +345,7 @@ function Graph({
     decorate,
     project,
     created,
+    onPlaced,
   ]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
