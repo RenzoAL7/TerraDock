@@ -146,6 +146,72 @@ func TestNewFileNamesAcceptPortableNamesOnly(t *testing.T) {
 	}
 }
 
+func TestNewFileTakesTheNeighbourModeWithOwnerAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		neighbour os.FileMode
+		hasTF     bool
+		want      os.FileMode
+	}{
+		{"read-only neighbour", 0o444, true, 0o644},
+		{"neighbour without permissions", 0o000, true, 0o600},
+		{"private neighbour", 0o640, true, 0o640},
+		{"no neighbour", 0, false, 0o644},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			project := filepath.Join(root, "project")
+			if err := os.Mkdir(project, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if tc.hasTF {
+				neighbour := filepath.Join(project, "main.tf")
+				if err := os.WriteFile(neighbour, []byte("# main\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(neighbour, tc.neighbour); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(neighbour, 0o600) })
+			}
+			if err := createFile(root, project, "new.tf", "# new\n"); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(filepath.Join(project, "new.tf"))
+			if err != nil || info.Mode().Perm() != tc.want {
+				t.Fatalf("mode = %v (%v), want %v", info.Mode().Perm(), err, tc.want)
+			}
+			if got, err := readFile(root, filepath.Join(project, "new.tf")); err != nil || got != "# new\n" {
+				t.Fatalf("new file is not readable back: %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestCreateFileDoesNotFollowADirectorySwappedForASymlink(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.Mkdir(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	beforeCreate = func() {
+		// After the path check, the project becomes a link out of the root.
+		if err := os.Rename(project, project+".old"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Symlink(outside, project); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeCreate = func() {} })
+	err := createFile(root, project, "new.tf", "# new\n")
+	errorCode(t, err, "io_error")
+	if _, err := os.Stat(filepath.Join(outside, "new.tf")); !os.IsNotExist(err) {
+		t.Fatal("the new file was written outside the allowed root")
+	}
+}
+
 func TestCreateResourceFileInDemoStaysInMemory(t *testing.T) {
 	root := t.TempDir()
 	m, err := New(root)

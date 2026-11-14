@@ -222,24 +222,35 @@ func windowsReserved(stem string) bool {
 	return len(stem) == 4 && (strings.HasPrefix(stem, "com") || strings.HasPrefix(stem, "lpt")) && stem[3] >= '0' && stem[3] <= '9'
 }
 
+// beforeCreate lets tests act inside createFile between the path check and
+// the creation. It does nothing outside tests.
+var beforeCreate = func() {}
+
 // createFile writes a file that must not exist yet, inside the confined
-// project directory. It works through an os.Root of that directory, so a
-// directory swapped for a symlink after the check cannot redirect the write,
-// and O_EXCL makes creation fail instead of replacing a file (or following a
-// symlink) that appeared since the project was read. The new file takes the
-// permissions of the first .tf next to it, or 0644.
+// project directory. It resolves the path through an os.Root of the allowed
+// root, so a directory swapped for a symlink after the check cannot take the
+// write outside it, and O_EXCL makes creation fail instead of replacing a file
+// (or following a symlink) that appeared since the project was read. The new
+// file takes the permissions of the first .tf next to it, or 0644, and is
+// always readable and writable by its owner.
 func createFile(root, dir, name, content string) error {
 	safe, err := safePath(root, dir)
 	if err != nil {
 		return err
 	}
-	folder, err := os.OpenRoot(safe)
+	rel, err := filepath.Rel(root, safe)
 	if err != nil {
-		return problem("io_error", "No se puede abrir la carpeta del proyecto.")
+		return problem("forbidden_path", "La carpeta debe estar dentro de la raíz permitida.")
 	}
-	defer folder.Close()
-	perm := neighbourPerm(folder)
-	f, err := folder.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	beforeCreate()
+	allowed, err := os.OpenRoot(root)
+	if err != nil {
+		return problem("io_error", "No se puede abrir la raíz permitida.")
+	}
+	defer allowed.Close()
+	path := filepath.Join(rel, name)
+	perm := neighbourPerm(allowed, rel)
+	f, err := allowed.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return problem("file_exists", "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.")
@@ -258,19 +269,21 @@ func createFile(root, dir, name, content string) error {
 		err = closeErr
 	}
 	if err != nil {
-		_ = folder.Remove(name)
+		_ = allowed.Remove(path)
 		return problem("io_error", "No se puede escribir el archivo nuevo.")
 	}
 	return nil
 }
 
-func neighbourPerm(folder *os.Root) fs.FileMode {
-	dir, err := folder.Open(".")
+// neighbourPerm returns the mode of the first regular .tf in dir, plus owner
+// read and write: TerraDock must be able to save the file it just created.
+func neighbourPerm(allowed *os.Root, dir string) fs.FileMode {
+	folder, err := allowed.Open(dir)
 	if err != nil {
 		return 0o644
 	}
-	defer dir.Close()
-	entries, err := dir.ReadDir(-1)
+	defer folder.Close()
+	entries, err := folder.ReadDir(-1)
 	if err != nil {
 		return 0o644
 	}
@@ -280,7 +293,7 @@ func neighbourPerm(folder *os.Root) fs.FileMode {
 			continue
 		}
 		if info, err := entry.Info(); err == nil {
-			return info.Mode().Perm()
+			return info.Mode().Perm() | 0o600
 		}
 	}
 	return 0o644
