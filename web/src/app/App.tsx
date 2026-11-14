@@ -148,6 +148,8 @@ export default function App() {
     [help, setHelp] = useState(false),
     [creating, setCreating] = useState(false),
     [creatingDraft, setCreatingDraft] = useState(false);
+  // The create dialog shows its own failures; the app-wide banner stays free.
+  const [createError, setCreateError] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   // The last resource created here: the diagram places it in free space.
   const [placeId, setPlaceId] = useState("");
@@ -603,10 +605,12 @@ export default function App() {
     newFile: boolean;
   }) => {
     const id = `${request.resource.type}.${request.resource.name}`;
-    setError("");
+    setCreateError("");
     if (request.newFile) {
-      const next = await perform(() =>
-        api.createResourceFile(project.id, request.path, request.resource),
+      const next = await perform(
+        () =>
+          api.createResourceFile(project.id, request.path, request.resource),
+        setCreateError,
       );
       if (!next) return;
       setCreating(false);
@@ -624,7 +628,7 @@ export default function App() {
     try {
       const result = await createDraft(request.path, request.resource);
       if (result.error || !result.created) {
-        setError(result.error);
+        setCreateError(result.error);
         return;
       }
       setCreating(false);
@@ -949,7 +953,7 @@ export default function App() {
           ))}
         </nav>
       </div>
-      {error && !folder && !creating && (
+      {error && !folder && (
         <div className="global-message" role="alert">
           <TriangleAlert size={16} />
           <span>{error}</span>
@@ -1203,7 +1207,7 @@ export default function App() {
                 created={placeId}
                 marks={marks}
                 onCreate={() => {
-                  setError("");
+                  setCreateError("");
                   setCreating(true);
                 }}
               />
@@ -1384,12 +1388,12 @@ export default function App() {
           }
           preferred={selected}
           busy={busy || creatingDraft}
-          error={error}
+          error={createError}
           onCreate={(request) => void createResource(request)}
           onClose={() => {
             if (busy || creatingDraft) return;
             setCreating(false);
-            setError("");
+            setCreateError("");
           }}
         />
       )}

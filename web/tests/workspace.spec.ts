@@ -1110,11 +1110,13 @@ test("crear un recurso desde el diagrama lo escribe en el archivo, lo selecciona
   await expect.poll(() => readFile(file, "utf8")).toBe(localSource);
   await expect(page.getByTestId("node-aws_subnet.db")).toHaveCount(0);
 
-  // Right click on the canvas, into a new file; then edit it visually.
+  // Right click on the canvas, into a new file; then edit it visually. The
+  // event goes to the pane itself: after the undo the viewport may still be
+  // centred on the removed node, with a group frame under any fixed point.
   await page
     .getByTestId("architecture-canvas")
     .locator(".react-flow__pane")
-    .click({ button: "right", position: { x: 12, y: 140 } });
+    .dispatchEvent("contextmenu", { button: 2 });
   await dialog.getByRole("button", { name: /^Subred/ }).click();
   await dialog.getByLabel("Nombre", { exact: true }).fill("db");
   await dialog.getByLabel("Archivo", { exact: true }).selectOption({
@@ -1135,6 +1137,49 @@ test("crear un recurso desde el diagrama lo escribe en el archivo, lo selecciona
     .poll(() => readFile(created, "utf8"))
     .toBe(createdSubnet.slice(1).replace("10.0.1.0/24", "10.0.7.0/24"));
   expect(await readFile(file, "utf8")).toBe(localSource);
+});
+
+test("un fallo al crear el archivo se muestra en el diálogo y no en el aviso general", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const directory = await openLocalFolder(page);
+  // Another program creates the file between the check and the request.
+  await page.route("**/api/resource-file", (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "file_exists",
+        error:
+          "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.",
+      }),
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Crear recurso" });
+  await dialog.getByLabel("Archivo", { exact: true }).selectOption({
+    label: "Archivo nuevo…",
+  });
+  await dialog.getByLabel("Nombre del archivo nuevo").fill("network.tf");
+  await dialog.getByRole("button", { name: "Crear recurso" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Ya existe un archivo con ese nombre en la carpeta. Elige otro nombre.",
+  );
+  await expect(page.locator(".global-message[role=alert]")).toHaveCount(0);
+  // Closing the dialog drops its message; nothing is left behind.
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator(".global-message[role=alert]")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Crear recurso", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(
+    readFile(join(directory, "network.tf"), "utf8"),
+  ).rejects.toThrow();
 });
 
 test("deshacer mientras el autoguardado del recurso está en curso no deja el bloque en el disco", async ({
