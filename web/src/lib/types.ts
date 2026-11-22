@@ -140,9 +140,18 @@ export interface Preview {
 }
 
 export type DeployAction = "create" | "update" | "delete" | "replace";
+export type EmulatorId = "floci" | "aws";
+export interface EmulatorInfo {
+  id: EmulatorId;
+  name: string;
+  endpoint: string;
+  experimental: boolean;
+  canStart: boolean;
+}
 export interface FlociJob {
   id: string;
   action: "start" | "plan" | "apply" | "destroy" | "refresh";
+  emulator: EmulatorId;
   projectId: string;
   state: "running" | "succeeded" | "failed" | "canceled";
   error?: string;
@@ -158,6 +167,9 @@ export interface FlociPlan {
   stale: boolean;
 }
 export interface FlociStatus {
+  /** Selected local emulator; plans and state are kept per emulator. */
+  emulator: EmulatorId;
+  emulators: EmulatorInfo[];
   endpoint: string;
   reachable: boolean;
   terraform: string;

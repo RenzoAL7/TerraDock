@@ -12,8 +12,9 @@ flowchart LR
   API --> FS[Archivos de la raíz permitida]
   Parser --> Model[Modelo con rangos y referencias]
   Model --> UI
-  API -. pestaña Floci .-> Runner[Ejecutor Terraform]
+  API -. pestaña Emulador .-> Runner[Ejecutor Terraform]
   Runner --> Floci[Emulador Floci local]
+  Runner -. experimental .-> AWSEmu[AWS Emulator en Docker]
 ```
 
 ## Responsabilidades
@@ -22,7 +23,7 @@ flowchart LR
 | --- | --- | --- |
 | `cmd/terradock` | Opciones de arranque, servidor HTTP y apertura del navegador (`--open`) | No contiene lógica de interpretación |
 | `internal/` | Modelo, interpretación, acceso al proyecto y API | Abrir, analizar y editar no ejecutan Terraform ni contactan AWS ni Floci |
-| `internal/floci` | Estado del emulador y `terraform plan`, `apply` y `destroy` contra Floci, solo desde su pestaña | Endpoint de loopback o `*.floci.io` (debe resolver a tu equipo); copia privada; sin las variables `AWS_*` del usuario y, de las `TF_*`, solo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*`. `terraform init` descarga providers la primera vez en cada proyecto y `floci start` puede descargar su imagen Docker |
+| `internal/floci` | Estado del emulador y `terraform plan`, `apply` y `destroy` contra Floci o AWS Emulator, solo desde su pestaña | Floci: endpoint de loopback o `*.floci.io` (debe resolver a tu equipo). AWS Emulator: `https` en loopback, confiando solo en su CA. Copia privada por emulador; sin las variables `AWS_*` del usuario y, de las `TF_*`, solo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*`. `terraform init` descarga providers la primera vez en cada proyecto y `floci start` puede descargar su imagen Docker |
 | `web/src/` | Navegación, borradores, editor, canvas e inspector | El diagrama se deriva del modelo interpretado |
 | `web/embed.go` | Incrusta `web/dist` en el ejecutable con la etiqueta de build `embed` | Sin esa etiqueta (`web/noembed.go`), el frontend se lee de `--assets` |
 | `examples/` | Entradas didácticas para probar el flujo | No son un despliegue verificado |
@@ -65,6 +66,7 @@ Al arrancar, `cmd/terradock` decide el primer proyecto: la carpeta indicada como
 | `GET /api/floci` | Estado: endpoint, si el emulador responde, Terraform detectado y su versión, trabajo actual, plan, recursos desplegados y variables |
 | `POST /api/floci/run` | `action` (`start`, `plan`, `apply`, `destroy` o `refresh`), `projectId`, `variables`; responde `202` con el trabajo, `409 floci_error` si hay otro en curso y `400 floci_error` ante una acción o un proyecto no válidos |
 | `POST /api/floci/cancel` | Cuerpo `{}`; cancela el trabajo en curso |
+| `POST /api/floci/emulator` | `emulator` (`floci` o `aws`); responde el estado nuevo, `409 floci_error` si hay un trabajo en curso y `400` ante un emulador desconocido |
 | `GET /api/events` | Stream SSE con eventos `project` y snapshots completos |
 
 `cmd/terradock` siempre crea el ejecutor de Floci; las rutas de Floci solo responden `503 floci_unavailable` cuando el servidor se construye sin él, como en algunas pruebas. La revisión esperada corresponde al hash del archivo de origen, también para editar una propiedad. El servidor verifica `projectId` bajo el mismo bloqueo que el guardado; una operación destinada al proyecto anterior recibe `409 project_conflict`, incluso cuando los dos proyectos contienen archivos con el mismo nombre y contenido. Una revisión obsoleta recibe `409 revision_conflict`. Las respuestas de error incluyen `code` y `error`.
@@ -86,6 +88,8 @@ Cada recurso del análisis lleva `line` y `endLine`: el bloque completo o, en un
 Cada pestaña copia sus borradores en IndexedDB bajo una clave propia (raíz, carpeta, archivo e identificador de pestaña), así que dos pestañas abiertas no se pisan. Las pestañas se avisan con `BroadcastChannel` de qué archivos tienen borradores, usando el mismo identificador; el canal se cierra en `pagehide` y se reabre si la página vuelve de la caché de navegación. Al abrir un proyecto, la pestaña espera unos 100 ms a que respondan las demás antes de ofrecer borradores; las entradas de una pestaña que haya respondido durante la vida de la página no se ofrecen, no se borran y no caducan, y «Borrar borradores guardados» tampoco toca las de pestañas abiertas.
 
 El paquete `internal/floci` ejecuta Terraform contra el emulador en una copia de trabajo, ubicada en la caché del usuario, que contiene los archivos guardados, los `tfvars` del proyecto y los archivos de override del provider `aws` y del backend `local`. El entorno del proceso no incluye las variables `AWS_*` del usuario ni sus `TF_*`, salvo `TF_CLI_CONFIG_FILE` y `TF_TOKEN_*` (mirrors y registros privados), y fija `CHECKPOINT_DISABLE=1`. `floci start` y `terraform version` reciben el entorno saneado sin ninguna `TF_*`. «Aplicar» solo ejecuta el archivo de plan generado para la misma huella de archivos.
+
+Con AWS Emulator, la copia vive en `aws/` dentro de la caché, el provider recibe `custom_ca_bundle` y `AWS_CA_BUNDLE` con el certificado que el emulador escribe en la carpeta montada (`aws-emulator/<puerto>/ca.pem`), y la comprobación de salud (`/__admin/health`) solo confía en esa CA. El certificado cambia en cada arranque. Como el emulador guarda los recursos solo en memoria, su huella identifica el proceso: si cambia, el estado leído antes no se muestra y el siguiente plan descarta el `tfstate` anterior. «Iniciar» construye la imagen con el Dockerfile embebido (`aws-emulator.Dockerfile`) solo si falta y arranca el contenedor en `127.0.0.1`, con `--auth off` (TerraDock usa claves de prueba) y la telemetría desactivada.
 
 El cliente solo pide `GET /api/floci` mientras la pestaña Floci está visible o hay una operación en curso, para que plan, aplicar y destruir sigan actualizando el diagrama aunque se salga de la pestaña. Ese estado comprueba si el endpoint responde y, una vez por proceso y fuera del bloqueo del ejecutor, lee `terraform version -json`; no se reintenta si falla. Como el estado no se refresca siempre, el diagrama no muestra marcas de un estado leído para otro proyecto y descarta las de un plan leído para una revisión guardada anterior.
 

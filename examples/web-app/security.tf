@@ -1,3 +1,4 @@
+# AWS solo admite ASCII en la descripción de un security group: sin tildes.
 resource "aws_security_group" "load_balancer" {
   name        = "web-ingress"
   description = "Entrada HTTPS del balanceador"
@@ -13,7 +14,7 @@ resource "aws_security_group" "load_balancer" {
 
 resource "aws_security_group" "application" {
   name        = "app-access"
-  description = "Acceso de aplicación y regla de ejemplo para revisión"
+  description = "Acceso de aplicacion y regla de ejemplo para revision"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -34,7 +35,7 @@ resource "aws_security_group" "application" {
 
 resource "aws_security_group" "database" {
   name        = "database-access"
-  description = "PostgreSQL desde la aplicación"
+  description = "PostgreSQL desde la aplicacion"
   vpc_id      = aws_vpc.main.id
 
   ingress {

@@ -105,7 +105,7 @@ export const markStyle: Record<
     border: "#e8c3be",
   },
   deployed: {
-    label: "✓ en Floci",
+    label: "✓ desplegado",
     color: "#2f7a57",
     background: "#e8f5ee",
     border: "#c4e3d2",

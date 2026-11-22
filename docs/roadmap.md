@@ -26,7 +26,7 @@ El 100 % se medirá contra este contrato y la lista de aceptación final. La vis
 | Proyectos habituales (fase 4) | En curso: variables, locals (uno por clave), outputs y proveedores con alias son nodos con aristas; `count`/`for_each` se marcan sin expandir; el inspector explica por qué una propiedad no es editable; `.tf.json` se lista con aviso. Solo se leen los `tfvars` del proyecto para Floci. |
 | Planes (fase 6) | Parcial por otra vía: el plan generado contra Floci se muestra sobre el diagrama. Todavía no se importa un JSON arbitrario. |
 | Demo y portada (fase 8) | Publicadas en el dominio, con el núcleo compartido vía WebAssembly. |
-| Floci (V8) | En curso: iniciar, plan, aplicar el plan revisado, leer estado y destruir; marcas por nodo; variables. Verificado contra Floci 1.5.33. |
+| Floci (V8) | En curso: iniciar, plan, aplicar el plan revisado, leer estado y destruir; marcas por nodo; variables. Verificado contra Floci 1.5.33. Selector de emulador con AWS Emulator, el oficial de AWS (experimental, verificado con 1.0.578): se quedará como opción hasta que acepte `aws_instance` sin `availability_zone`; entonces se evaluará retirar Floci. |
 
 ## 0. Cerrar el contrato antes de desarrollar
 
@@ -279,7 +279,7 @@ La evaluación completa de IAM, estimación de costos, otros proveedores, colabo
 
 1. Hecho: la sincronización con 300 recursos queda por debajo de un segundo ([rendimiento](performance.md)). Falta repetir la medición en otras máquinas y sistemas.
 2. Cerrar la fase 3: comparación de versiones en conflicto, recuperación de borradores tras cerrar o reiniciar, y archivos creados, renombrados o eliminados externamente.
-3. Completar V8: detectar antes de aplicar los tipos y servicios que Floci no emula (por ejemplo `t3.large`) y comparar atributos con el estado desplegado.
+3. Completar V8: detectar antes de aplicar los tipos y servicios que el emulador elegido no emula (por ejemplo `t3.large` en Floci, o `aws_instance` sin `availability_zone` en AWS Emulator) y comparar atributos con el estado desplegado.
 4. Fase 4: variables, locals, outputs y módulos locales visibles en el diagrama.
 5. Fase 9: publicar un release (etiqueta `v*`) de los binarios ARM64 y AMD64 para macOS, Linux y Windows, ya implementados con frontend incrustado y apertura del navegador (corren en la laptop de cada persona; la imagen del sitio sigue solo en ARM64). Después, firma de código, actualización y desinstalación documentadas.
 

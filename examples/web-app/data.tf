@@ -18,6 +18,8 @@ resource "aws_db_instance" "postgres" {
   vpc_security_group_ids      = [aws_security_group.database.id]
   username                    = "appadmin"
   manage_master_user_password = true
+  # Demo desechable: sin snapshot final, `terraform destroy` puede borrarla.
+  skip_final_snapshot = true
 
   tags = { Name = "postgres-database" }
 }
