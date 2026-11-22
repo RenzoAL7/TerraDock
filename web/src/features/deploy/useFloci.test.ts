@@ -3,6 +3,8 @@ import { deployMarks, pollDelay } from "./useFloci";
 import type { FlociStatus } from "../../lib/types";
 
 const status = (stale = false): FlociStatus => ({
+  emulator: "floci",
+  emulators: [],
   endpoint: "http://localhost:4566",
   reachable: true,
   terraform: "/usr/bin/terraform",

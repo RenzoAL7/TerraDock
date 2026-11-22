@@ -545,7 +545,7 @@ function Graph({
         </span>
         {marks && Object.keys(marks).length > 0 && (
           <span>
-            <i className="legend-floci" /> Floci
+            <i className="legend-floci" /> En el emulador
           </span>
         )}
       </div>

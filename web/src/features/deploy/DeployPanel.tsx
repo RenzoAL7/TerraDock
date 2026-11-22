@@ -10,10 +10,10 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { Dialog } from "../../components/Dialog";
-import type { FlociJob, FlociStatus } from "../../lib/types";
+import type { EmulatorId, FlociJob, FlociStatus } from "../../lib/types";
 
 const actionLabel: Record<FlociJob["action"], string> = {
-  start: "Iniciar Floci",
+  start: "Iniciar emulador",
   plan: "Plan",
   apply: "Aplicar",
   destroy: "Destruir",
@@ -32,7 +32,7 @@ interface Props {
   error: string;
   running: boolean;
   hasUnsaved: boolean;
-  /** .tf.json files of the project: Floci leaves them out of the copy. */
+  /** .tf.json files of the project: the local copy leaves them out. */
   jsonFiles: string[];
   resourceCount: number;
   onRun: (
@@ -40,6 +40,7 @@ interface Props {
     variables?: Record<string, string>,
   ) => void;
   onCancel: () => void;
+  onSelectEmulator: (emulator: EmulatorId) => void;
 }
 
 export function DeployPanel({
@@ -52,6 +53,7 @@ export function DeployPanel({
   resourceCount,
   onRun,
   onCancel,
+  onSelectEmulator,
 }: Props) {
   const [confirmDestroy, setConfirmDestroy] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -67,12 +69,15 @@ export function DeployPanel({
       <div className="deploy-content">
         <div className="empty-state">
           <Rocket size={35} />
-          <h2>Integración con Floci no disponible</h2>
+          <h2>Despliegue local no disponible</h2>
           <p>Este servidor se inició sin el ejecutor de despliegue local.</p>
         </div>
       </div>
     );
 
+  const emulators = status?.emulators ?? [];
+  const current = emulators.find((e) => e.id === status?.emulator);
+  const name = current?.name ?? "Emulador";
   const plan = status?.plan;
   const ready = !!status?.reachable && !!status.terraform;
   const counts = plan?.counts ?? {};
@@ -85,11 +90,35 @@ export function DeployPanel({
   );
   return (
     <div className="deploy-content">
+      {emulators.length > 1 && (
+        <div
+          className="deploy-emulators"
+          role="radiogroup"
+          aria-label="Emulador local"
+        >
+          {emulators.map((e) => (
+            <button
+              key={e.id}
+              role="radio"
+              aria-checked={e.id === status?.emulator}
+              className={e.id === status?.emulator ? "active" : ""}
+              disabled={running}
+              title={running ? "Espera a que termine la operación" : e.endpoint}
+              onClick={() =>
+                e.id !== status?.emulator && onSelectEmulator(e.id)
+              }
+            >
+              {e.name}
+              {e.experimental && <small>experimental</small>}
+            </button>
+          ))}
+        </div>
+      )}
       <section className="deploy-status">
         <div className={`deploy-check ${status?.reachable ? "ok" : ""}`}>
           <i />
           <div>
-            <strong>Floci</strong>
+            <strong>{name}</strong>
             <span>
               {status
                 ? status.reachable
@@ -104,7 +133,7 @@ export function DeployPanel({
               disabled={running}
               onClick={() => onRun("start")}
             >
-              <Power size={14} /> Iniciar Floci
+              <Power size={14} /> Iniciar {name}
             </button>
           )}
         </div>
@@ -122,7 +151,7 @@ export function DeployPanel({
         <div className="deploy-check ok">
           <i />
           <div>
-            <strong>Estado en Floci</strong>
+            <strong>Estado en {name}</strong>
             <span>
               {status?.deployed.length ?? 0} de {resourceCount} recursos
               desplegados
@@ -135,10 +164,29 @@ export function DeployPanel({
         TerraDock ejecuta Terraform sobre una copia privada de los archivos
         guardados. Tu carpeta no se modifica: los endpoints, las credenciales de
         prueba y el estado local solo existen en esa copia. Las credenciales AWS
-        reales de tu entorno se descartan. Floci no emula todos los servicios ni
-        tipos de AWS (por ejemplo, solo algunos tipos de instancia); si un apply
-        falla a mitad, «Destruir» elimina lo que se creó.
+        reales de tu entorno se descartan. Ningún emulador reproduce AWS por
+        completo; si un apply falla a mitad, «Destruir» elimina lo que se creó.
       </p>
+      {status?.emulator === "floci" && (
+        <p className="field-note" data-testid="emulator-note">
+          Floci no emula todos los servicios ni tipos de AWS (por ejemplo, solo
+          algunos tipos de instancia).
+        </p>
+      )}
+      {status?.emulator === "aws" && (
+        <p className="field-note deploy-warning" data-testid="emulator-note">
+          <TriangleAlert size={13} />
+          <span>
+            AWS Emulator es el emulador oficial de AWS y está en desarrollo
+            activo. Se ejecuta en Docker; la primera vez construye su imagen
+            (descarga ~200 MB). Guarda los recursos solo en memoria: al
+            reiniciarlo se pierden y TerraDock descarta el estado anterior. Por
+            ahora rechaza <code>aws_instance</code> sin{" "}
+            <code>availability_zone</code> y <code>aws_db_instance</code> sin{" "}
+            <code>engine_version</code>.
+          </span>
+        </p>
+      )}
       {hasUnsaved && (
         <p className="field-note deploy-warning">
           <TriangleAlert size={13} /> Hay borradores sin guardar. El plan usa la
@@ -147,7 +195,7 @@ export function DeployPanel({
       )}
       {jsonFiles.length > 0 && (
         <p className="field-note deploy-warning" data-testid="floci-json">
-          <TriangleAlert size={13} /> Floci omite{" "}
+          <TriangleAlert size={13} /> El despliegue local omite{" "}
           {jsonFiles.length === 1 ? "el archivo" : "los archivos"}{" "}
           {jsonFiles.join(", ")}: el plan solo usa los archivos .tf.
         </p>
@@ -164,7 +212,7 @@ export function DeployPanel({
           <p className="field-note">
             Se leen de <code>terraform.tfvars</code> y{" "}
             <code>*.auto.tfvars</code>. Los valores que escribas aquí solo se
-            usan en Floci y no se guardan en tu carpeta.
+            usan en el emulador y no se guardan en tu carpeta.
           </p>
           {variables.map((v) => (
             <label
@@ -269,7 +317,7 @@ export function DeployPanel({
 
       {confirmDestroy && (
         <Dialog
-          title="Destruir recursos en Floci"
+          title={`Destruir recursos en ${name}`}
           onClose={() => setConfirmDestroy(false)}
         >
           <p className="dialog-intro">
@@ -290,7 +338,7 @@ export function DeployPanel({
                 onRun("destroy");
               }}
             >
-              Destruir en Floci
+              Destruir en {name}
             </button>
           </div>
         </Dialog>

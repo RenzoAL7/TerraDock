@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/floci", s.flociStatus)
 	mux.HandleFunc("POST /api/floci/run", s.flociRun)
 	mux.HandleFunc("POST /api/floci/cancel", s.flociCancel)
+	mux.HandleFunc("POST /api/floci/emulator", s.flociEmulator)
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "not_found", "La ruta de API no existe.")
@@ -324,7 +325,7 @@ func (s *Server) resourceFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) flociStatus(w http.ResponseWriter, r *http.Request) {
 	if s.floci == nil {
-		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "El despliegue local no está activado.")
 		return
 	}
 	respond(w, http.StatusOK, s.floci.Status(r.Context()))
@@ -332,7 +333,7 @@ func (s *Server) flociStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) flociRun(w http.ResponseWriter, r *http.Request) {
 	if s.floci == nil {
-		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "El despliegue local no está activado.")
 		return
 	}
 	var request struct {
@@ -357,7 +358,7 @@ func (s *Server) flociRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) flociCancel(w http.ResponseWriter, r *http.Request) {
 	if s.floci == nil {
-		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "La integración con Floci no está activada.")
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "El despliegue local no está activado.")
 		return
 	}
 	var request struct{}
@@ -365,6 +366,29 @@ func (s *Server) flociCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]bool{"canceled": s.floci.Cancel()})
+}
+
+// flociEmulator selects the local emulator (Floci or AWS Emulator).
+func (s *Server) flociEmulator(w http.ResponseWriter, r *http.Request) {
+	if s.floci == nil {
+		fail(w, http.StatusServiceUnavailable, "floci_unavailable", "El despliegue local no está activado.")
+		return
+	}
+	var request struct {
+		Emulator string `json:"emulator"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	if err := s.floci.SetEmulator(request.Emulator); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, floci.ErrBusy) {
+			status = http.StatusConflict
+		}
+		fail(w, status, "floci_error", err.Error())
+		return
+	}
+	respond(w, http.StatusOK, s.floci.Status(r.Context()))
 }
 
 func decode(w http.ResponseWriter, r *http.Request, value any) bool {

@@ -100,7 +100,7 @@ resource "aws_vpc" "main" { cidr_block = "10.0.0.0/16" }
 	if err := os.WriteFile(filepath.Join(dir, "terraform.tfstate"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	layout, err := Stage(dir, files, "http://localhost:4566", nil, nil)
+	layout, err := Stage(dir, files, "http://localhost:4566", "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,20 +127,20 @@ resource "aws_vpc" "main" { cidr_block = "10.0.0.0/16" }
 
 func TestStageGeneratesProviderAndRejectsUnsupportedConfig(t *testing.T) {
 	dir := t.TempDir()
-	layout, err := Stage(dir, map[string]string{"main.tf": `resource "aws_s3_bucket" "b" {}`}, "http://localhost:4566", nil, nil)
+	layout, err := Stage(dir, map[string]string{"main.tf": `resource "aws_s3_bucket" "b" {}`}, "http://localhost:4566", "", nil, nil)
 	if err != nil || !layout.GeneratedProvider {
 		t.Fatalf("expected generated provider: %+v %v", layout, err)
 	}
 	if body, err := os.ReadFile(filepath.Join(dir, providerFile)); err != nil || !strings.Contains(string(body), `region = "us-east-1"`) {
 		t.Fatal("provider file not generated")
 	}
-	if _, err := Stage(dir, map[string]string{"main.tf": "terraform {\n cloud {}\n}\n"}, "http://localhost:4566", nil, nil); err == nil {
+	if _, err := Stage(dir, map[string]string{"main.tf": "terraform {\n cloud {}\n}\n"}, "http://localhost:4566", "", nil, nil); err == nil {
 		t.Fatal("cloud block must be rejected")
 	}
-	if _, err := Stage(dir, map[string]string{"main.tf": `resource "x" {`}, "http://localhost:4566", nil, nil); err == nil {
+	if _, err := Stage(dir, map[string]string{"main.tf": `resource "x" {`}, "http://localhost:4566", "", nil, nil); err == nil {
 		t.Fatal("invalid HCL must be rejected")
 	}
-	if _, err := Stage(dir, map[string]string{overrideFile: ""}, "http://localhost:4566", nil, nil); err == nil {
+	if _, err := Stage(dir, map[string]string{overrideFile: ""}, "http://localhost:4566", "", nil, nil); err == nil {
 		t.Fatal("reserved file names must be rejected")
 	}
 }
@@ -157,7 +157,7 @@ func TestStartRequiresMatchingProjectAndFreshPlan(t *testing.T) {
 	if _, err := r.Start("apply", "p1", nil); err == nil {
 		t.Fatal("apply without plan must be rejected")
 	}
-	r.plans["p1"] = &Plan{Fingerprint: "old"}
+	r.plans[stateKey(EmulatorFloci, "p1")] = &Plan{Fingerprint: "old"}
 	if _, err := r.Start("apply", "p1", nil); err == nil || !strings.Contains(err.Error(), "cambiaron") {
 		t.Fatalf("stale plan must be rejected, got %v", err)
 	}
@@ -191,7 +191,7 @@ variable "count_n" {}
 		t.Errorf("size/count = %+v %+v", byName["size"], byName["count_n"])
 	}
 	dir := t.TempDir()
-	if _, err := Stage(dir, files, "http://localhost:4566", tfvars, map[string]string{"ami_id": "ami-123", "count_n": "3"}); err != nil {
+	if _, err := Stage(dir, files, "http://localhost:4566", "", tfvars, map[string]string{"ami_id": "ami-123", "count_n": "3"}); err != nil {
 		t.Fatal(err)
 	}
 	if body, _ := os.ReadFile(filepath.Join(dir, "terraform.tfvars")); string(body) != "count_n = 2" {
@@ -321,7 +321,7 @@ func TestTerraformRunsKeepOnlyRegistrySettingsFromTheUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	values := map[string][]string{}
-	for _, kv := range r.environment(t.TempDir()) {
+	for _, kv := range r.environment(t.TempDir(), EmulatorFloci, "") {
 		key, value, _ := strings.Cut(kv, "=")
 		values[key] = append(values[key], value)
 	}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, flociApi } from "../../lib/api";
 import type {
   DeployAction,
+  EmulatorId,
   FlociJob,
   FlociStatus,
   Resource,
@@ -129,6 +130,20 @@ export function useFloci(
     [projectId, refresh],
   );
 
+  const selectEmulator = useCallback(async (emulator: EmulatorId) => {
+    setError("");
+    try {
+      setStatus(await flociApi.emulator(emulator));
+      setRead(currentRef.current);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "No se pudo cambiar de emulador.",
+      );
+    }
+  }, []);
+
   const cancel = useCallback(async () => {
     try {
       await flociApi.cancel();
@@ -145,6 +160,7 @@ export function useFloci(
     setError,
     run,
     cancel,
+    selectEmulator,
     running,
   };
 }

@@ -934,7 +934,7 @@ export default function App() {
               { id: "code", label: "Código", icon: Code2 },
               { id: "split", label: "Dividir vista", icon: LayoutPanelLeft },
               { id: "analysis", label: "Análisis", icon: ShieldCheck },
-              { id: "deploy", label: "Floci", icon: Rocket },
+              { id: "deploy", label: "Emulador", icon: Rocket },
             ] as const
           ).map((v) => (
             <button
@@ -1234,6 +1234,7 @@ export default function App() {
                 }
                 onRun={(action, variables) => void floci.run(action, variables)}
                 onCancel={() => void floci.cancel()}
+                onSelectEmulator={(id) => void floci.selectEmulator(id)}
               />
             )}
             {view === "analysis" && (
@@ -1471,23 +1472,24 @@ export default function App() {
                 detectan al momento.
               </li>
               <li>
-                <strong>Despliega en Floci</strong> desde la pestaña Floci:
-                plan, aplicar y destruir contra el emulador local.
+                <strong>Despliega en local</strong> desde la pestaña Emulador:
+                plan, aplicar y destruir contra Floci o contra AWS Emulator, el
+                emulador oficial de AWS (experimental).
               </li>
             </ol>
             <p>
               Todo se sirve desde tu equipo. Abrir una carpeta, analizar y
               editar no ejecutan Terraform ni contactan proveedores cloud ni
-              Floci. Los módulos se muestran sin expandir y <code>count</code>/
-              <code>for_each</code> no se evalúan.
+              emuladores. Los módulos se muestran sin expandir y{" "}
+              <code>count</code>/<code>for_each</code> no se evalúan.
             </p>
             <p>
-              Solo la pestaña Floci, mientras está abierta o hay una operación
-              en curso, consulta el emulador local y la versión de Terraform.
-              Plan, aplicar, destruir y Leer estado ejecutan Terraform contra el
-              emulador: <code>terraform init</code> descarga providers la
-              primera vez en cada proyecto, e Iniciar Floci puede descargar su
-              imagen Docker si falta.
+              Solo la pestaña Emulador, mientras está abierta o hay una
+              operación en curso, consulta el emulador local y la versión de
+              Terraform. Plan, aplicar, destruir y Leer estado ejecutan
+              Terraform contra el emulador: <code>terraform init</code> descarga
+              providers la primera vez en cada proyecto, e Iniciar puede
+              descargar la imagen Docker del emulador si falta.
             </p>
             <p className="root-note">
               Una instancia del servidor comparte el proyecto entre sus

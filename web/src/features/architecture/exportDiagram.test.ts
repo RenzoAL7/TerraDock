@@ -279,7 +279,7 @@ describe("diagramToSvg", () => {
     expect(diagramToSvg({ nodes, edges: graph.edges, caption }).svg).toBe(
       first,
     );
-    expect(first).toContain("✓ en Floci");
+    expect(first).toContain("✓ desplegado");
     expect(first).toContain("(sensible)");
     expect(first).not.toContain("s3cr3t");
     expect(first).toMatch(

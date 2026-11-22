@@ -1,4 +1,5 @@
-// Package floci runs Terraform against a local Floci AWS emulator.
+// Package floci runs Terraform against a local AWS emulator: Floci (default)
+// or the official AWS Emulator (experimental), selected at runtime.
 //
 // Every run works on a private staging copy of the confirmed (saved) project
 // files. The user's folder is never modified: provider endpoints, credentials
@@ -57,10 +58,13 @@ type Project struct {
 type Source func() Project
 
 type Config struct {
-	Endpoint  string // Floci endpoint; loopback or *.floci.io only.
-	Terraform string // Terraform/OpenTofu binary; looked up in PATH when empty.
-	Floci     string // Floci CLI; optional, used only to start the emulator.
-	StateDir  string // Private directory for staging copies and state.
+	Endpoint    string // Floci endpoint; loopback or *.floci.io only.
+	AWSEndpoint string // AWS Emulator endpoint; https on loopback only.
+	Emulator    string // Initial emulator: EmulatorFloci (default) or EmulatorAWS.
+	Terraform   string // Terraform/OpenTofu binary; looked up in PATH when empty.
+	Floci       string // Floci CLI; optional, used only to start Floci.
+	Docker      string // Docker CLI; optional, used only to start AWS Emulator.
+	StateDir    string // Private directory for staging copies and state.
 }
 
 // Change is the planned action for one graph resource ID.
@@ -81,6 +85,7 @@ type Plan struct {
 type Job struct {
 	ID        string    `json:"id"`
 	Action    string    `json:"action"`
+	Emulator  string    `json:"emulator"`
 	ProjectID string    `json:"projectId"`
 	State     string    `json:"state"` // running|succeeded|failed|canceled
 	Error     string    `json:"error,omitempty"`
@@ -98,15 +103,17 @@ type Variable struct {
 }
 
 type Status struct {
-	Endpoint         string     `json:"endpoint"`
-	Reachable        bool       `json:"reachable"`
-	Terraform        string     `json:"terraform"`
-	TerraformVersion string     `json:"terraformVersion"`
-	CanStart         bool       `json:"canStart"`
-	Job              *Job       `json:"job,omitempty"`
-	Plan             *Plan      `json:"plan,omitempty"`
-	Deployed         []string   `json:"deployed"`
-	Variables        []Variable `json:"variables"`
+	Emulator         string         `json:"emulator"`
+	Emulators        []EmulatorInfo `json:"emulators"`
+	Endpoint         string         `json:"endpoint"`
+	Reachable        bool           `json:"reachable"`
+	Terraform        string         `json:"terraform"`
+	TerraformVersion string         `json:"terraformVersion"`
+	CanStart         bool           `json:"canStart"`
+	Job              *Job           `json:"job,omitempty"`
+	Plan             *Plan          `json:"plan,omitempty"`
+	Deployed         []string       `json:"deployed"`
+	Variables        []Variable     `json:"variables"`
 }
 
 type Runner struct {
@@ -116,10 +123,14 @@ type Runner struct {
 	mu       sync.Mutex
 	job      *Job
 	cancel   context.CancelFunc
-	plans    map[string]*Plan
-	deployed map[string][]string
-	values   map[string]map[string]string // project → variable values (memory only)
-	seq      int
+	emulator string
+	plans    map[string]*Plan    // emulator+project → last plan
+	deployed map[string][]string // emulator+project → resources in its state
+	// AWS Emulator process the deployed list was read from; the emulator
+	// keeps resources in memory only, so they vanish when it restarts.
+	instances map[string]string
+	values    map[string]map[string]string // project → variable values (memory only)
+	seq       int
 
 	// The Terraform version is read at most once, outside mu, so a slow or
 	// failing binary never blocks status, cancel or job logging.
@@ -170,6 +181,19 @@ func New(cfg Config, source Source) (*Runner, error) {
 		return nil, err
 	}
 	cfg.Endpoint = endpoint
+	if cfg.AWSEndpoint == "" {
+		cfg.AWSEndpoint = DefaultAWSEndpoint
+	}
+	if cfg.AWSEndpoint, err = ValidateAWSEndpoint(cfg.AWSEndpoint); err != nil {
+		return nil, err
+	}
+	switch cfg.Emulator {
+	case "":
+		cfg.Emulator = EmulatorFloci
+	case EmulatorFloci, EmulatorAWS:
+	default:
+		return nil, fmt.Errorf("emulador no válido: %q (usa floci o aws)", cfg.Emulator)
+	}
 	if cfg.Terraform == "" {
 		for _, name := range []string{"terraform", "tofu"} {
 			if path, err := exec.LookPath(name); err == nil {
@@ -183,6 +207,11 @@ func New(cfg Config, source Source) (*Runner, error) {
 			cfg.Floci = path
 		}
 	}
+	if cfg.Docker == "" {
+		if path, err := exec.LookPath("docker"); err == nil {
+			cfg.Docker = path
+		}
+	}
 	if cfg.StateDir == "" {
 		base, err := os.UserCacheDir()
 		if err != nil {
@@ -193,7 +222,45 @@ func New(cfg Config, source Source) (*Runner, error) {
 	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("prepare floci state dir: %w", err)
 	}
-	return &Runner{cfg: cfg, source: nativeOnly(source), client: &http.Client{Timeout: 1500 * time.Millisecond}, plans: map[string]*Plan{}, deployed: map[string][]string{}, values: map[string]map[string]string{}}, nil
+	return &Runner{cfg: cfg, source: nativeOnly(source), client: &http.Client{Timeout: 1500 * time.Millisecond}, emulator: cfg.Emulator, plans: map[string]*Plan{}, deployed: map[string][]string{}, instances: map[string]string{}, values: map[string]map[string]string{}}, nil
+}
+
+func stateKey(emulator, projectID string) string { return emulator + "\x00" + projectID }
+
+func (r *Runner) endpoint(emulator string) string {
+	if emulator == EmulatorAWS {
+		return r.cfg.AWSEndpoint
+	}
+	return r.cfg.Endpoint
+}
+
+func (r *Runner) canStart(emulator string) bool {
+	if emulator == EmulatorAWS {
+		return r.cfg.Docker != ""
+	}
+	return r.cfg.Floci != ""
+}
+
+// Emulator returns the selected emulator.
+func (r *Runner) Emulator() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.emulator
+}
+
+// SetEmulator selects the emulator for later runs. Plans, state and staging
+// copies are kept per emulator, so switching back finds them again.
+func (r *Runner) SetEmulator(id string) error {
+	if id != EmulatorFloci && id != EmulatorAWS {
+		return errors.New("emulador no válido")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.job != nil && r.job.State == "running" {
+		return ErrBusy
+	}
+	r.emulator = id
+	return nil
 }
 
 func (r *Runner) Close() {
@@ -208,9 +275,16 @@ func (r *Runner) Close() {
 // project, the last plan (marked stale when saved files changed) and the
 // resources present in the Floci state.
 func (r *Runner) Status(ctx context.Context) Status {
-	status := Status{Endpoint: r.cfg.Endpoint, Terraform: r.cfg.Terraform, CanStart: r.cfg.Floci != "", Deployed: []string{}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.cfg.Endpoint+"/", nil)
-	if err == nil {
+	emulator := r.Emulator()
+	status := Status{Emulator: emulator, Endpoint: r.endpoint(emulator), Terraform: r.cfg.Terraform, CanStart: r.canStart(emulator), Deployed: []string{}}
+	for _, id := range []string{EmulatorFloci, EmulatorAWS} {
+		status.Emulators = append(status.Emulators, EmulatorInfo{ID: id, Name: emulatorName(id), Endpoint: r.endpoint(id), Experimental: id == EmulatorAWS, CanStart: r.canStart(id)})
+	}
+	instance := ""
+	if emulator == EmulatorAWS {
+		status.Reachable = r.awsReachable(ctx)
+		instance = r.awsInstance()
+	} else if req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.cfg.Endpoint+"/", nil); err == nil {
 		if resp, err := r.client.Do(req); err == nil {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
@@ -234,12 +308,13 @@ func (r *Runner) Status(ctx context.Context) Status {
 		job.Log = append([]string(nil), r.job.Log...)
 		status.Job = &job
 	}
-	if plan := r.plans[projectID]; plan != nil {
+	key := stateKey(emulator, projectID)
+	if plan := r.plans[key]; plan != nil {
 		copy := *plan
 		copy.Stale = plan.Fingerprint != fingerprint(files)
 		status.Plan = &copy
 	}
-	if deployed := r.deployed[projectID]; deployed != nil {
+	if deployed := r.deployed[key]; deployed != nil && (emulator != EmulatorAWS || r.instances[key] == instance) {
 		status.Deployed = append(status.Deployed, deployed...)
 	}
 	return status
@@ -275,7 +350,7 @@ func terraformVersion(binary string, env []string) string {
 	return parsed.Version
 }
 
-var ErrBusy = errors.New("ya hay una operación de Floci en curso")
+var ErrBusy = errors.New("ya hay una operación de despliegue local en curso")
 
 // Start launches an action in the background. Actions: start, plan, apply,
 // destroy, refresh. Apply only executes the saved plan for unchanged files.
@@ -284,14 +359,20 @@ func (r *Runner) Start(action, projectID string, values map[string]string) (*Job
 	switch action {
 	case "start", "plan", "apply", "destroy", "refresh":
 	default:
-		return nil, errors.New("acción de Floci no válida")
+		return nil, errors.New("acción de despliegue no válida")
 	}
 	project := r.source()
 	current, files := project.ID, project.Files
 	if projectID == "" || projectID != current {
 		return nil, errors.New("el proyecto abierto cambió; recarga antes de continuar")
 	}
-	if action == "start" && r.cfg.Floci == "" {
+	r.mu.Lock()
+	emulator := r.emulator
+	r.mu.Unlock()
+	if action == "start" && !r.canStart(emulator) {
+		if emulator == EmulatorAWS {
+			return nil, errors.New("no se encontró Docker en el PATH; AWS Emulator se ejecuta en un contenedor")
+		}
 		return nil, errors.New("no se encontró la CLI de Floci en el PATH")
 	}
 	if action != "start" && r.cfg.Terraform == "" {
@@ -305,6 +386,10 @@ func (r *Runner) Start(action, projectID string, values map[string]string) (*Job
 	if r.job != nil && r.job.State == "running" {
 		return nil, ErrBusy
 	}
+	if r.emulator != emulator {
+		return nil, errors.New("el emulador cambió; recarga antes de continuar")
+	}
+	key := stateKey(emulator, projectID)
 	if len(values) > 0 {
 		known := map[string]bool{}
 		for _, v := range Variables(files, nil) {
@@ -331,7 +416,7 @@ func (r *Runner) Start(action, projectID string, values map[string]string) (*Job
 		vars[name] = value
 	}
 	if action == "apply" {
-		plan := r.plans[projectID]
+		plan := r.plans[key]
 		if plan == nil {
 			return nil, errors.New("genera un plan antes de aplicar")
 		}
@@ -340,7 +425,7 @@ func (r *Runner) Start(action, projectID string, values map[string]string) (*Job
 		}
 	}
 	r.seq++
-	job := &Job{ID: fmt.Sprintf("job-%d", r.seq), Action: action, ProjectID: projectID, State: "running", Log: []string{}, Started: time.Now()}
+	job := &Job{ID: fmt.Sprintf("job-%d", r.seq), Action: action, Emulator: emulator, ProjectID: projectID, State: "running", Log: []string{}, Started: time.Now()}
 	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	r.job, r.cancel = job, cancel
 	go r.run(ctx, cancel, job, project, vars)
@@ -387,24 +472,42 @@ func (r *Runner) run(ctx context.Context, cancel context.CancelFunc, job *Job, p
 
 func (r *Runner) execute(ctx context.Context, job *Job, project Project, vars map[string]string) error {
 	name, files := project.Name, project.Files
+	emulator, key := job.Emulator, stateKey(job.Emulator, job.ProjectID)
 	if job.Action == "start" {
+		if emulator == EmulatorAWS {
+			return r.startAWS(ctx, job)
+		}
 		r.logf(job, "$ floci start")
-		return r.command(ctx, job, "", r.cfg.Floci, r.toolEnvironment(), "start")
+		return r.command(ctx, job, "", r.cfg.Floci, r.toolEnvironment(), nil, "start")
 	}
+	// Floci keeps its historical location so existing state is found again.
 	dir := filepath.Join(r.cfg.StateDir, safeName(job.ProjectID))
-	layout, err := Stage(dir, files, r.cfg.Endpoint, ReadTFVars(project.Dir), vars)
+	caBundle, instance := "", ""
+	if emulator == EmulatorAWS {
+		dir = filepath.Join(r.cfg.StateDir, "aws", safeName(job.ProjectID))
+		if instance = r.awsInstance(); instance == "" {
+			return errors.New("AWS Emulator no está en marcha; inícialo primero")
+		}
+		caBundle = r.awsCA()
+	}
+	layout, err := Stage(dir, files, r.endpoint(emulator), caBundle, ReadTFVars(project.Dir), vars)
 	if err != nil {
 		return err
 	}
-	r.logf(job, "Copia de trabajo: %s", dir)
-	r.logf(job, "Endpoint Floci: %s · proyecto %s", r.cfg.Endpoint, name)
-	if layout.GeneratedProvider {
-		r.logf(job, "El proyecto no declara provider \"aws\"; se usa uno temporal para Floci.")
+	if emulator == EmulatorAWS {
+		if err := r.resetIfRestarted(job, dir, instance); err != nil {
+			return errors.New("no se pudo preparar la copia de trabajo")
+		}
 	}
-	env := r.environment(dir)
+	r.logf(job, "Copia de trabajo: %s", dir)
+	r.logf(job, "Endpoint %s: %s · proyecto %s", emulatorName(emulator), r.endpoint(emulator), name)
+	if layout.GeneratedProvider {
+		r.logf(job, "El proyecto no declara provider \"aws\"; se usa uno temporal para %s.", emulatorName(emulator))
+	}
+	env := r.environment(dir, emulator, caBundle)
 	tf := func(args ...string) error {
 		r.logf(job, "$ terraform %s", strings.Join(args, " "))
-		return r.command(ctx, job, dir, r.cfg.Terraform, env, args...)
+		return r.command(ctx, job, dir, r.cfg.Terraform, env, nil, args...)
 	}
 	if err := tf("init", "-input=false", "-no-color", "-reconfigure"); err != nil {
 		return err
@@ -420,30 +523,30 @@ func (r *Runner) execute(ctx context.Context, job *Job, project Project, vars ma
 		}
 		plan.ProjectID, plan.Fingerprint, plan.CreatedAt = job.ProjectID, fingerprint(files), time.Now()
 		r.mu.Lock()
-		r.plans[job.ProjectID] = plan
+		r.plans[key] = plan
 		r.mu.Unlock()
 		r.logf(job, "Plan: %d crear · %d actualizar · %d reemplazar · %d eliminar", plan.Counts["create"], plan.Counts["update"], plan.Counts["replace"], plan.Counts["delete"])
 	case "apply":
 		err := tf("apply", "-input=false", "-no-color", "terradock.tfplan")
 		r.mu.Lock()
-		delete(r.plans, job.ProjectID) // a plan file can only be applied once
+		delete(r.plans, key) // a plan file can only be applied once
 		r.mu.Unlock()
 		if err != nil {
-			_ = r.readState(ctx, job.ProjectID, dir, env)
+			_ = r.readState(ctx, key, instance, dir, env)
 			return err
 		}
 	case "destroy":
 		// No refresh: an emulator gap in one resource must not block cleaning up the rest.
 		err := tf("destroy", "-input=false", "-no-color", "-auto-approve", "-refresh=false")
 		r.mu.Lock()
-		delete(r.plans, job.ProjectID)
+		delete(r.plans, key)
 		r.mu.Unlock()
 		if err != nil {
-			_ = r.readState(ctx, job.ProjectID, dir, env)
+			_ = r.readState(ctx, key, instance, dir, env)
 			return err
 		}
 	}
-	return r.readState(ctx, job.ProjectID, dir, env)
+	return r.readState(ctx, key, instance, dir, env)
 }
 
 // toolEnvironment is the user's environment without AWS_* or TF_* variables,
@@ -473,8 +576,8 @@ func registryVariable(key string) bool {
 
 // environment is the Terraform run environment: the sanitized environment,
 // the user's registry settings, and test credentials and endpoints that only
-// point at Floci.
-func (r *Runner) environment(dir string) []string {
+// point at the selected emulator. AWS Emulator serves https with its own CA.
+func (r *Runner) environment(dir, emulator, caBundle string) []string {
 	missing := filepath.Join(dir, ".no-aws-config")
 	env := r.toolEnvironment()
 	for _, kv := range os.Environ() {
@@ -482,18 +585,21 @@ func (r *Runner) environment(dir string) []string {
 			env = append(env, kv)
 		}
 	}
+	if caBundle != "" {
+		env = append(env, "AWS_CA_BUNDLE="+caBundle, "AWS_DISABLE_HOST_PREFIX_INJECTION=true")
+	}
 	return append(env,
 		"AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_REGION=us-east-1", "AWS_DEFAULT_REGION=us-east-1",
-		"AWS_ENDPOINT_URL="+r.cfg.Endpoint, "AWS_CONFIG_FILE="+missing, "AWS_SHARED_CREDENTIALS_FILE="+missing,
+		"AWS_ENDPOINT_URL="+r.endpoint(emulator), "AWS_CONFIG_FILE="+missing, "AWS_SHARED_CREDENTIALS_FILE="+missing,
 		"AWS_EC2_METADATA_DISABLED=true",
 		"TF_IN_AUTOMATION=1", "TF_INPUT=0",
 		"TF_PLUGIN_CACHE_DIR="+filepath.Join(r.cfg.StateDir, "plugin-cache"),
 	)
 }
 
-func (r *Runner) command(ctx context.Context, job *Job, dir, binary string, env []string, args ...string) error {
+func (r *Runner) command(ctx context.Context, job *Job, dir, binary string, env []string, stdin io.Reader, args ...string) error {
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Dir = dir
+	cmd.Dir, cmd.Stdin = dir, stdin
 	if env != nil {
 		cmd.Env = env
 	}
@@ -536,12 +642,12 @@ func (r *Runner) readPlan(ctx context.Context, dir string, env []string) (*Plan,
 	return ParsePlan(out)
 }
 
-func (r *Runner) readState(ctx context.Context, projectID, dir string, env []string) error {
+func (r *Runner) readState(ctx context.Context, key, instance, dir string, env []string) error {
 	ids := []string{}
 	if _, err := os.Stat(filepath.Join(dir, "terraform.tfstate")); err == nil {
 		out, err := r.output(ctx, dir, env, "show", "-json")
 		if err != nil {
-			return errors.New("no se pudo leer el estado de Floci")
+			return errors.New("no se pudo leer el estado del emulador")
 		}
 		ids, err = ParseState(out)
 		if err != nil {
@@ -549,7 +655,7 @@ func (r *Runner) readState(ctx context.Context, projectID, dir string, env []str
 		}
 	}
 	r.mu.Lock()
-	r.deployed[projectID] = ids
+	r.deployed[key], r.instances[key] = ids, instance
 	r.mu.Unlock()
 	return nil
 }

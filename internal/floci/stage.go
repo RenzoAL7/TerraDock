@@ -15,7 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// Layout describes how the staging copy redirects the project to Floci.
+// Layout describes how the staging copy redirects the project to the emulator.
 type Layout struct {
 	Aliases           []string // aws provider aliases found ("" = default)
 	GeneratedProvider bool     // no aws provider block existed
@@ -24,9 +24,10 @@ type Layout struct {
 const valuesFile = "zz_terradock.auto.tfvars.json"
 
 // Stage replaces the .tf and tfvars files in dir with the project files, the
-// project's own tfvars, the values entered in TerraDock and the Floci
-// overrides. State, lock and .terraform data in dir are kept between runs.
-func Stage(dir string, files map[string]string, endpoint string, tfvars map[string]string, values map[string]string) (Layout, error) {
+// project's own tfvars, the values entered in TerraDock and the emulator
+// overrides. caBundle is the emulator's CA certificate for https endpoints
+// ("" for Floci). State, lock and .terraform data in dir are kept between runs.
+func Stage(dir string, files map[string]string, endpoint, caBundle string, tfvars map[string]string, values map[string]string) (Layout, error) {
 	layout, err := inspect(files)
 	if err != nil {
 		return layout, err
@@ -77,13 +78,13 @@ func Stage(dir string, files map[string]string, endpoint string, tfvars map[stri
 			return layout, errors.New("no se pudo escribir las variables")
 		}
 	}
-	override, provider := Overrides(layout, endpoint)
+	override, provider := Overrides(layout, endpoint, caBundle)
 	if err := os.WriteFile(filepath.Join(dir, overrideFile), []byte(override), 0o600); err != nil {
-		return layout, errors.New("no se pudo escribir la configuración de Floci")
+		return layout, errors.New("no se pudo escribir la configuración del emulador")
 	}
 	if provider != "" {
 		if err := os.WriteFile(filepath.Join(dir, providerFile), []byte(provider), 0o600); err != nil {
-			return layout, errors.New("no se pudo escribir la configuración de Floci")
+			return layout, errors.New("no se pudo escribir la configuración del emulador")
 		}
 	}
 	return layout, nil
@@ -100,14 +101,14 @@ func inspect(files map[string]string) (Layout, error) {
 	for _, name := range names {
 		parsed, diags := hclsyntax.ParseConfig([]byte(files[name]), name, hcl.InitialPos)
 		if diags.HasErrors() || parsed == nil {
-			return layout, fmt.Errorf("corrige los errores HCL de %s antes de usar Floci", name)
+			return layout, fmt.Errorf("corrige los errores HCL de %s antes de desplegar en local", name)
 		}
 		for _, block := range parsed.Body.(*hclsyntax.Body).Blocks {
 			switch {
 			case block.Type == "terraform":
 				for _, nested := range block.Body.Blocks {
 					if nested.Type == "cloud" {
-						return layout, errors.New("el bloque terraform { cloud } no es compatible con Floci; usa un backend estándar")
+						return layout, errors.New("el bloque terraform { cloud } no es compatible con el despliegue local; usa un backend estándar")
 					}
 				}
 			case block.Type == "provider" && len(block.Labels) == 1 && block.Labels[0] == "aws":
@@ -136,9 +137,9 @@ func inspect(files map[string]string) (Layout, error) {
 
 // Overrides renders the override file (backend + provider redirection) and,
 // when the project has no aws provider, a standalone provider file.
-func Overrides(layout Layout, endpoint string) (override, provider string) {
+func Overrides(layout Layout, endpoint, caBundle string) (override, provider string) {
 	var b strings.Builder
-	b.WriteString("# Generado por TerraDock solo en la copia de trabajo de Floci.\n")
+	b.WriteString("# Generado por TerraDock solo en la copia de trabajo del emulador local.\n")
 	b.WriteString("terraform {\n  backend \"local\" {\n    path = \"terraform.tfstate\"\n  }\n}\n")
 	body := func(alias string, region bool) string {
 		var p strings.Builder
@@ -155,6 +156,9 @@ func Overrides(layout Layout, endpoint string) (override, provider string) {
 		p.WriteString("  skip_metadata_api_check     = true\n")
 		p.WriteString("  skip_requesting_account_id  = true\n")
 		p.WriteString("  s3_use_path_style           = true\n")
+		if caBundle != "" {
+			fmt.Fprintf(&p, "  custom_ca_bundle            = %s\n", strconv.Quote(caBundle))
+		}
 		p.WriteString("  endpoints {\n")
 		for _, service := range services {
 			fmt.Fprintf(&p, "    %s = %s\n", service, strconv.Quote(endpoint))

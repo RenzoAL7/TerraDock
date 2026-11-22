@@ -42,6 +42,8 @@ type config struct {
 	open          bool
 	devOrigin     string
 	flociEndpoint string
+	awsEndpoint   string
+	emulator      string
 	terraform     string
 	version       bool
 }
@@ -56,6 +58,8 @@ func parseArgs(args []string) (config, error) {
 	fs.BoolVar(&c.open, "open", web.Files != nil, "Open the browser once the server is ready")
 	fs.StringVar(&c.devOrigin, "dev-origin", "", "Exact HTTP loopback origin allowed for the Vite development proxy")
 	fs.StringVar(&c.flociEndpoint, "floci-endpoint", floci.DefaultEndpoint, "Local Floci endpoint used for plan/apply (loopback or *.floci.io)")
+	fs.StringVar(&c.awsEndpoint, "aws-emulator-endpoint", floci.DefaultAWSEndpoint, "Local AWS Emulator endpoint (https on loopback, experimental)")
+	fs.StringVar(&c.emulator, "emulator", floci.EmulatorFloci, "Initial local emulator: floci or aws (can be changed in the interface)")
 	fs.StringVar(&c.terraform, "terraform", "", "Terraform or OpenTofu binary (default: lookup in PATH)")
 	fs.BoolVar(&c.version, "version", false, "Print version and exit")
 	fs.Usage = func() {
@@ -198,7 +202,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	runner, err := floci.New(floci.Config{Endpoint: c.flociEndpoint, Terraform: c.terraform}, func() floci.Project {
+	runner, err := floci.New(floci.Config{Endpoint: c.flociEndpoint, AWSEndpoint: c.awsEndpoint, Emulator: c.emulator, Terraform: c.terraform}, func() floci.Project {
 		snapshot, files := manager.Files()
 		return floci.Project{ID: snapshot.ID, Name: snapshot.Name, Dir: snapshot.Path, Files: files}
 	})

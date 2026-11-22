@@ -97,24 +97,41 @@ El diagrama muestra la **configuración declarada**. No muestra lo que existe en
 
 ## Desplegar en local con Floci (opcional)
 
-La pestaña **Floci** ejecuta `terraform plan`, `apply` y `destroy` contra [Floci](https://floci.io), un emulador de AWS que corre en Docker en tu equipo. Sirve para probar sin tocar una cuenta real.
+La pestaña **Emulador** ejecuta `terraform plan`, `apply` y `destroy` contra un emulador de AWS que corre en tu equipo. Sirve para probar sin tocar una cuenta real. Puedes elegir entre dos:
+
+| Emulador | Qué es | Cómo se inicia |
+|---|---|---|
+| [Floci](https://floci.io) (por defecto) | Emulador de código abierto (MIT), endpoint `http://localhost:4566` | `floci start` o el botón «Iniciar Floci» |
+| [AWS Emulator](https://github.com/aws/aws-emulator) (experimental) | Emulador oficial de AWS (CC0), endpoint `https://127.0.0.1:9297` | Botón «Iniciar AWS Emulator»; necesita Docker |
 
 ```sh
-floci start          # o el botón «Iniciar Floci» del panel
-terradock
+floci start          # o el botón «Iniciar» del panel
+terradock            # terradock --emulator aws para empezar con AWS Emulator
 ```
 
-- El plan marca cada nodo con su acción: `+ crear`, `~ actualizar`, `± reemplazar` o `− eliminar`. Después de aplicar, los nodos desplegados aparecen como `✓ en Floci`.
+- El selector del panel cambia de emulador. El plan y el estado se guardan por separado para cada uno.
+- El plan marca cada nodo con su acción: `+ crear`, `~ actualizar`, `± reemplazar` o `− eliminar`. Después de aplicar, los nodos desplegados aparecen como `✓ desplegado`.
 - «Aplicar» ejecuta exactamente el plan que revisaste. Si los archivos cambian, hay que generar otro plan.
 - Terraform trabaja sobre una **copia privada** de tus archivos guardados. Tu carpeta no se modifica.
   - Los endpoints de Floci y las credenciales de prueba solo existen en esa copia.
   - Tus variables `AWS_*` reales se descartan.
 - Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo se guardan en memoria.
-- Solo se aceptan endpoints de loopback (`localhost`, `127.0.0.1`…) o `*.floci.io`, que debe resolver a tu equipo. Para otro puerto: `terradock --floci-endpoint http://localhost:4566`.
-- **Cuándo se usa la red:** abrir una carpeta, ver el diagrama y editar no ejecutan Terraform ni contactan Floci.
-  - Solo mientras la pestaña Floci está visible, o mientras hay una operación en curso, TerraDock consulta cada pocos segundos si el emulador responde en su endpoint local. La primera vez también ejecuta `terraform version`, sin tus variables `AWS_*` ni `TF_*` y con `CHECKPOINT_DISABLE=1`, así que no consulta actualizaciones a HashiCorp.
+- Solo se aceptan endpoints de loopback (`localhost`, `127.0.0.1`…) o `*.floci.io`, que debe resolver a tu equipo. Para otro puerto: `terradock --floci-endpoint http://localhost:4566` o `terradock --aws-emulator-endpoint https://127.0.0.1:9300`.
+- **Cuándo se usa la red:** abrir una carpeta, ver el diagrama y editar no ejecutan Terraform ni contactan ningún emulador.
+  - Solo mientras la pestaña Emulador está visible, o mientras hay una operación en curso, TerraDock consulta cada pocos segundos si el emulador responde en su endpoint local. La primera vez también ejecuta `terraform version`, sin tus variables `AWS_*` ni `TF_*` y con `CHECKPOINT_DISABLE=1`, así que no consulta actualizaciones a HashiCorp.
   - Plan, aplicar, destruir y «Leer estado» ejecutan `terraform init`, que descarga los providers del registro la primera vez en cada proyecto. Después se reutiliza la caché de plugins de TerraDock.
   - «Iniciar Floci» ejecuta `floci start`, que puede descargar la imagen Docker del emulador si falta.
+  - «Iniciar AWS Emulator» construye una vez la imagen local `terradock/aws-emulator:lts`, porque AWS no publica una. Para eso descarga su paquete LTS oficial, de unos 200 MB, desde `downloads.aws.com`. Después arranca el contenedor `terradock-aws-emulator` publicado solo en `127.0.0.1`, con la telemetría desactivada (`EMULATOR_TELEMETRY=off`). Para actualizar el emulador: `docker image rm terradock/aws-emulator:lts` y vuelve a iniciarlo.
+
+### Límites de AWS Emulator (experimental)
+
+Verificado con la versión 1.0.578 (noviembre de 2026). Es más estricto que Floci: valida como AWS real. Por ejemplo, rechaza tildes en la descripción de un security group. Sus límites actuales:
+
+- Rechaza `aws_instance` sin `availability_zone`: el provider envía una zona vacía y el emulador no la trata como «sin valor» ([fallo conocido](https://github.com/aws/aws-emulator/tree/main/issues/things-that-do-not-work)). Mientras no se corrija, declara `availability_zone` en cada instancia.
+- Rechaza `aws_db_instance` sin `engine_version`.
+- Guarda los recursos solo en memoria. Si se reinicia, los recursos desaparecen y TerraDock descarta el estado de Terraform anterior al siguiente plan.
+- Atiende una sola región (`us-east-1`) y una sola cuenta (`000000000000`). No evalúa políticas IAM.
+- Las AMI válidas son las suyas: lístalas con `aws ec2 describe-images --owners amazon`, apuntando al emulador.
 
 ## Para desarrolladores
 

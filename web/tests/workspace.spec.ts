@@ -729,12 +729,17 @@ output "password" {
   await expect(inspector).not.toContainText("s3cr3t");
 });
 
-test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
+test("la pestaña Emulador muestra el estado del emulador y de Terraform", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await page.getByRole("button", { name: "Emulador", exact: true }).click();
   await expect(page.getByText("Estado en Floci")).toBeVisible();
+  // Floci is the default; the official AWS Emulator is offered as experimental.
+  await expect(page.getByRole("radio", { name: "Floci" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /AWS Emulator/ })).toContainText(
+    "experimental",
+  );
   await expect(
     page.getByRole("button", { name: "Generar plan", exact: true }),
   ).toBeVisible();
@@ -745,19 +750,21 @@ test("la pestaña Floci muestra el estado del emulador y de Terraform", async ({
   await expect(page.getByTestId("floci-json")).toHaveCount(0);
 });
 
-test("la pestaña Floci avisa de que omite los .tf.json", async ({ page }) => {
+test("la pestaña Emulador avisa de que omite los .tf.json", async ({
+  page,
+}) => {
   await page.goto("/");
   await openLocalFolder(page, {
     "main.tf": localSource,
     "extra.tf.json": '{"variable": {"region": {"default": "us-east-1"}}}',
   });
-  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await page.getByRole("button", { name: "Emulador", exact: true }).click();
   await expect(page.getByTestId("floci-json")).toContainText(
-    "Floci omite el archivo extra.tf.json",
+    "El despliegue local omite el archivo extra.tf.json",
   );
 });
 
-test("solo la pestaña Floci consulta /api/floci", async ({ page }) => {
+test("solo la pestaña Emulador consulta /api/floci", async ({ page }) => {
   const requests: string[] = [];
   page.on("request", (entry) => {
     if (new URL(entry.url()).pathname.startsWith("/api/floci"))
@@ -771,7 +778,7 @@ test("solo la pestaña Floci consulta /api/floci", async ({ page }) => {
   await page.clock.runFor(30_000);
   expect(requests).toEqual([]);
 
-  await page.getByRole("button", { name: "Floci", exact: true }).click();
+  await page.getByRole("button", { name: "Emulador", exact: true }).click();
   await expect.poll(() => requests.length).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Arquitectura", exact: true }).click();

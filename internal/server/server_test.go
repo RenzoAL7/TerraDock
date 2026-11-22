@@ -435,3 +435,22 @@ func TestHTTPFlociUnavailableWithoutRunner(t *testing.T) {
 	api := setupAPI(t)
 	assertStatus(t, api.request(t, "GET", "/api/floci", "", nil), http.StatusServiceUnavailable)
 }
+
+func TestHTTPSelectEmulator(t *testing.T) {
+	runner, err := floci.New(floci.Config{StateDir: t.TempDir(), Endpoint: "http://127.0.0.1:1", Terraform: "/bin/true"}, func() floci.Project { return floci.Project{ID: "p"} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runner.Close)
+	api := setupAPI(t, Options{Floci: runner})
+	assertStatus(t, api.request(t, "POST", "/api/floci/emulator", bodyJSON(t, map[string]string{"emulator": "aws"}), nil), http.StatusOK)
+	if runner.Emulator() != floci.EmulatorAWS {
+		t.Fatalf("emulator = %q", runner.Emulator())
+	}
+	assertStatus(t, api.request(t, "POST", "/api/floci/emulator", bodyJSON(t, map[string]string{"emulator": "localstack"}), nil), http.StatusBadRequest)
+	api.token = ""
+	assertStatus(t, api.request(t, "POST", "/api/floci/emulator", bodyJSON(t, map[string]string{"emulator": "floci"}), nil), http.StatusForbidden)
+	if runner.Emulator() != floci.EmulatorAWS {
+		t.Fatal("emulator changed without the session token")
+	}
+}

@@ -2,6 +2,7 @@ import {
   normalizeProject,
   type Directory,
   type FlociJob,
+  type EmulatorId,
   type FlociStatus,
   type NewResource,
   type Preview,
@@ -164,6 +165,11 @@ export const flociApi = {
     request<{ canceled: boolean }>("/floci/cancel", {
       method: "POST",
       body: "{}",
+    }),
+  emulator: (emulator: EmulatorId) =>
+    request<FlociStatus>("/floci/emulator", {
+      method: "POST",
+      body: JSON.stringify({ emulator }),
     }),
 };
 
