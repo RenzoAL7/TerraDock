@@ -4,7 +4,7 @@
 
 TerraDock es un editor visual de Terraform que corre en tu equipo. Abres una carpeta con archivos `.tf` y ves sus recursos como un diagrama. Lo que cambias en el código aparece en el diagrama al instante, y lo que cambias en el diagrama se escribe en el código.
 
-![TerraDock con explorador de recursos, diagrama AWS e inspector de propiedades](docs/screenshots/workspace.png)
+![TerraDock con el explorador de recursos, el diagrama de arquitectura y el inspector de propiedades](docs/screenshots/workspace.png)
 
 > Proyecto en desarrollo. Revisa el [alcance y los límites](docs/limitations.md) antes de usarlo con un proyecto real.
 
@@ -12,11 +12,11 @@ TerraDock es un editor visual de Terraform que corre en tu equipo. Abres una car
 
 ### Opción 1: probarlo en el navegador
 
-Abre la [demo interactiva](https://terradock.renzoaguilar.dev/demo/). No instalas nada ni creas una cuenta. Trae un ejemplo que puedes editar y descargar.
+Abre la [demo interactiva](https://terradock.renzoaguilar.dev/demo/). Sin instalar nada ni crear una cuenta.
 
 ### Opción 2: descargarlo para usar tus archivos
 
-TerraDock es un único archivo, sin instalador ni dependencias. Elige el de tu sistema:
+Un único archivo, sin instalador ni dependencias:
 
 | Sistema | Procesador                        | Descarga                                                                                                                      |
 | ------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -27,20 +27,9 @@ TerraDock es un único archivo, sin instalador ni dependencias. Elige el de tu s
 | Linux   | x64 (`uname -m` dice `x86_64`)    | [terradock_linux_amd64.tar.gz](https://github.com/RenzoAL7/TerraDock/releases/latest/download/terradock_linux_amd64.tar.gz)   |
 | Linux   | ARM64 (`uname -m` dice `aarch64`) | [terradock_linux_arm64.tar.gz](https://github.com/RenzoAL7/TerraDock/releases/latest/download/terradock_linux_arm64.tar.gz)   |
 
-¿No sabes qué Mac tienes? Menú Apple → **Acerca de esta Mac**. Si dice «Chip Apple M…», es Apple Silicon.
+Versiones anteriores y sumas de verificación: [Releases](https://github.com/RenzoAL7/TerraDock/releases).
 
-Todas las versiones y sus sumas de verificación están en [Releases](https://github.com/RenzoAL7/TerraDock/releases).
-
-> Los archivos aparecen cuando se publica un release (etiqueta `v*`). Si los enlaces todavía no descargan nada, aún no hay ninguno publicado: [compila desde el código](#para-desarrolladores).
-
-**Después de descargar:**
-
-1. **Descomprime el archivo.** Dentro está el programa `terradock` (`terradock.exe` en Windows).
-2. **Ábrelo desde la carpeta de tus proyectos.** En una terminal, entra en la carpeta que contiene tus archivos `.tf` y ejecútalo. TerraDock solo puede abrir esa carpeta y lo que contiene.
-3. **Usa el navegador.** Se abre solo en [http://127.0.0.1:7331](http://127.0.0.1:7331). Si la carpeta tiene archivos `.tf`, TerraDock la abre directamente; si no, muestra un ejemplo y puedes pulsar **Abrir carpeta** para elegir un proyecto.
-4. **Para cerrarlo,** pulsa `Ctrl+C` en la terminal.
-
-En macOS y Linux, desde la terminal:
+Descomprímelo y ejecútalo desde la carpeta de tus archivos `.tf`. Se abre en [http://127.0.0.1:7331](http://127.0.0.1:7331); para cerrarlo, `Ctrl+C`. En macOS o Linux:
 
 ```sh
 cd ~/mis-proyectos-terraform
@@ -48,166 +37,62 @@ curl -L https://github.com/RenzoAL7/TerraDock/releases/latest/download/terradock
 ./terradock
 ```
 
-Cambia `darwin_arm64` por el nombre de tu sistema en la tabla.
-
-**La primera vez:**
-
-- **macOS** puede decir que no puede verificar al desarrollador, porque el programa no está firmado. Ejecuta `xattr -d com.apple.quarantine terradock` en la carpeta donde lo descomprimiste. Si lo descargaste con `curl`, no hace falta.
-- **Windows** puede mostrar SmartScreen. Pulsa **Más información** → **Ejecutar de todas formas**.
-
-Opciones útiles:
+Cambia `darwin_arm64` por tu sistema. La primera vez, macOS puede bloquearlo por no estar firmado (`xattr -d com.apple.quarantine terradock`, no hace falta si usaste `curl`), y Windows puede mostrar SmartScreen (**Más información** → **Ejecutar de todas formas**).
 
 ```sh
-terradock ./infra              # Abrir ese proyecto al arrancar (también: --open-path ./infra)
-terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir (por defecto, la del proyecto o la actual)
+terradock ./infra              # Abrir ese proyecto al arrancar
+terradock --root ~/proyectos   # Carpeta que TerraDock puede abrir
 terradock --port 8080          # Otro puerto (por defecto, 7331)
 terradock --open=false         # No abrir el navegador
-terradock --version
 ```
 
-Si el puerto ya está en uso (por ejemplo, porque TerraDock ya está abierto), el programa lo indica y sugiere otro con `--port`.
-
-## ¿Qué necesito?
-
-| Quiero…                                 | Necesito                                                                                |
-| --------------------------------------- | --------------------------------------------------------------------------------------- |
-| Probarlo sin instalar nada              | Un navegador: [demo](https://terradock.renzoaguilar.dev/demo/)                          |
-| Ver y editar mi Terraform               | Solo el archivo de TerraDock. No necesito Terraform, cuenta ni credenciales             |
-| Desplegar en un AWS simulado (opcional) | Además: Docker, la CLI de [Floci](https://floci.io) y Terraform u OpenTofu en el `PATH` |
-
-Tus archivos no salen de tu equipo. TerraDock escucha solo en `127.0.0.1`, así que otros equipos de tu red no pueden conectarse.
+TerraDock solo puede abrir la carpeta elegida y escucha solo en `127.0.0.1`. Tus archivos no salen de tu equipo.
 
 ## Qué puedes hacer
 
-- **Ver tu arquitectura.** Cada recurso declarado es un nodo, y sus referencias son las conexiones. Las variables, los locals, los outputs y los proveedores también aparecen, en sus propias columnas; los bloques con `count` o `for_each` llevan una marca.
-- **Editar en ambos sentidos, en tiempo real.**
-  - Lo que escribes en el código actualiza el diagrama y el inspector. El análisis arranca 60 ms después de la última tecla; con 300 recursos, el p95 medido hasta que el diagrama muestra el cambio es de unos 95 ms.
-  - Lo que cambias en el inspector se escribe en el código al momento.
-  - Si editas el archivo con otro programa (VS Code, vim…), el cambio aparece al instante.
-- **Crear recursos desde el diagrama.** **Crear recurso** (o clic derecho en el lienzo) abre una paleta con los tipos AWS más comunes (VPC, subred, grupo de seguridad, EC2, S3, rol IAM, Lambda, RDS e internet gateway) y sus atributos obligatorios. Eliges nombre, archivo (o uno nuevo `.tf`) y a qué VPC, subred, rol o variable apunta. En un archivo existente, el bloque se añade al final sin tocar el resto, entra como borrador y llega al disco con el autoguardado o con ⌘/Ctrl + S; un archivo nuevo se escribe en disco en el momento. El nodo aparece seleccionado y el editor muestra el bloque. **Deshacer** lo quita mientras el archivo no haya cambiado después.
-- **Un diagrama ordenado que no se descoloca.** Al abrir un proyecto, el diagrama se ordena por capas: cada recurso queda debajo de lo que referencia, dentro de su VPC o subred. Mientras editas, nada se recoloca. Los recursos nuevos aparecen en un hueco junto a su primer vecino, un recurso renombrado conserva su sitio y uno que vuelve tras deshacer regresa a donde estaba. Lo que cortas y vuelves a pegar, aunque sea más de la mitad del diagrama, también vuelve a su sitio. Si un cambio trae sobre todo recursos nuevos (cambias de rama con `git checkout`, pegas un archivo grande en un proyecto pequeño), se ordena de nuevo. **Ordenar** vuelve a ordenarlo todo cuando quieras.
-- **Exportar el diagrama.** **Exportar** (abajo, en los controles del lienzo) descarga el diagrama completo como SVG, con las fuentes dentro, o como PNG. Incluye también los nodos que no caben en pantalla y una banda que nombra el proyecto, la fecha, el número de recursos, el filtro activo y si hay cambios sin guardar. Se genera en el navegador, sin salir de tu equipo.
-- **Navegar.** Al seleccionar un nodo se marca su bloque en el código. Al mover el cursor por el código se selecciona su nodo.
-- **Guardar sin pensar.** El autoguardado escribe el archivo cuando el HCL es válido. Si otro programa cambió el archivo, se detiene, conserva tu borrador y te muestra las dos versiones para conservar la tuya encima de la nueva, usar la del disco o editar el resultado. Los borradores sin guardar sobreviven a cerrar o recargar la pestaña; los de más de 7 días se eliminan al volver a abrir TerraDock, y puedes borrarlos antes desde Ayuda. Puedes desactivarlo y guardar con ⌘/Ctrl + S.
-- **Ver errores.** Los errores de sintaxis aparecen en el editor. Mientras el HCL es inválido, el diagrama mantiene la última versión válida.
+- **Ver tu arquitectura.** Cada recurso es un nodo dentro de su VPC o subred, y sus referencias son las conexiones. Variables, locals, outputs y proveedores también aparecen.
+- **Editar en ambos sentidos, en tiempo real.** El código, el inspector y cualquier otro editor (VS Code, vim…) actualizan el diagrama al instante, también con cientos de recursos ([mediciones](docs/performance.md)).
+- **Crear recursos desde el diagrama** con los tipos AWS más comunes y sus atributos obligatorios. **Deshacer** lo quita.
+- **Un diagrama que no se descoloca.** Se ordena por capas al abrir; mientras editas, nada cambia de sitio. **Ordenar** lo reordena cuando quieras.
+- **Exportar** el diagrama completo como SVG o PNG.
+- **Guardar sin pensar.** El autoguardado solo escribe HCL válido, detecta cambios hechos por otros programas y conserva tus borradores al cerrar la pestaña.
+- **Ver errores** de sintaxis en el editor, mientras el diagrama mantiene la última versión válida.
 
-Funciona con proyectos grandes: con 300 recursos, un cambio llega al diagrama en unos 60 ms desde otro editor, 150 ms desde el código y 240 ms desde el inspector ([mediciones](docs/performance.md)).
+El diagrama muestra la **configuración declarada**, no lo que existe en tu cuenta de AWS ni un plan.
 
-El diagrama muestra la **configuración declarada**. No muestra lo que existe en tu cuenta de AWS ni predice un plan. Las expresiones que necesitan a Terraform para resolverse se muestran tal cual.
+## Desplegar en un emulador local (opcional)
 
-## Desplegar en local con Floci (opcional)
+La pestaña **Emulador** ejecuta `terraform plan`, `apply` y `destroy` contra un AWS simulado en tu equipo, sin tocar una cuenta real.
 
-La pestaña **Emulador** ejecuta `terraform plan`, `apply` y `destroy` contra un emulador de AWS que corre en tu equipo. Sirve para probar sin tocar una cuenta real. Puedes elegir entre dos:
+| Emulador                                                           | Qué es                     | Necesitas                                      |
+| ------------------------------------------------------------------ | -------------------------- | ---------------------------------------------- |
+| [Floci](https://floci.io) (por defecto)                            | Emulador de código abierto | Docker, la CLI de Floci y Terraform u OpenTofu |
+| [AWS Emulator](https://github.com/aws/aws-emulator) (experimental) | Emulador oficial de AWS    | Docker y Terraform u OpenTofu                  |
 
-| Emulador | Qué es | Cómo se inicia |
-|---|---|---|
-| [Floci](https://floci.io) (por defecto) | Emulador de código abierto (MIT), endpoint `http://localhost:4566` | `floci start` o el botón «Iniciar Floci» |
-| [AWS Emulator](https://github.com/aws/aws-emulator) (experimental) | Emulador oficial de AWS (CC0), endpoint `https://127.0.0.1:9297` | Botón «Iniciar AWS Emulator»; necesita Docker |
+- El plan marca cada nodo: `+ crear`, `~ actualizar`, `± reemplazar` o `− eliminar`. «Aplicar» ejecuta exactamente el plan revisado.
+- Terraform trabaja sobre una **copia privada** de tus archivos, sin tus credenciales `AWS_*` reales. Tu carpeta no se modifica.
+- Editar y ver el diagrama nunca ejecutan Terraform ni contactan el emulador.
 
-```sh
-floci start          # o el botón «Iniciar» del panel
-terradock            # terradock --emulator aws para empezar con AWS Emulator
-```
-
-- El selector del panel cambia de emulador. El plan y el estado se guardan por separado para cada uno.
-- El plan marca cada nodo con su acción: `+ crear`, `~ actualizar`, `± reemplazar` o `− eliminar`. Después de aplicar, los nodos desplegados aparecen como `✓ desplegado`.
-- «Aplicar» ejecuta exactamente el plan que revisaste. Si los archivos cambian, hay que generar otro plan.
-- Terraform trabaja sobre una **copia privada** de tus archivos guardados. Tu carpeta no se modifica.
-  - Los endpoints de Floci y las credenciales de prueba solo existen en esa copia.
-  - Tus variables `AWS_*` reales se descartan.
-- Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo se guardan en memoria.
-- Solo se aceptan endpoints de loopback (`localhost`, `127.0.0.1`…) o `*.floci.io`, que debe resolver a tu equipo. Para otro puerto: `terradock --floci-endpoint http://localhost:4566` o `terradock --aws-emulator-endpoint https://127.0.0.1:9300`.
-- **Cuándo se usa la red:** abrir una carpeta, ver el diagrama y editar no ejecutan Terraform ni contactan ningún emulador.
-  - Solo mientras la pestaña Emulador está visible, o mientras hay una operación en curso, TerraDock consulta cada pocos segundos si el emulador responde en su endpoint local. La primera vez también ejecuta `terraform version`, sin tus variables `AWS_*` ni `TF_*` y con `CHECKPOINT_DISABLE=1`, así que no consulta actualizaciones a HashiCorp.
-  - Plan, aplicar, destruir y «Leer estado» ejecutan `terraform init`, que descarga los providers del registro la primera vez en cada proyecto. Después se reutiliza la caché de plugins de TerraDock.
-  - «Iniciar Floci» ejecuta `floci start`, que puede descargar la imagen Docker del emulador si falta.
-  - «Iniciar AWS Emulator» construye una vez la imagen local `terradock/aws-emulator:lts`, porque AWS no publica una. Para eso descarga su paquete LTS oficial, de unos 200 MB, desde `downloads.aws.com`. Después arranca el contenedor `terradock-aws-emulator` publicado solo en `127.0.0.1`, con la telemetría desactivada (`EMULATOR_TELEMETRY=off`). Para actualizar el emulador: `docker image rm terradock/aws-emulator:lts` y vuelve a iniciarlo.
-
-### Límites de AWS Emulator (experimental)
-
-Verificado con la versión 1.0.578 (noviembre de 2026). Es más estricto que Floci: valida como AWS real. Por ejemplo, rechaza tildes en la descripción de un security group. Sus límites actuales:
-
-- Rechaza `aws_instance` sin `availability_zone`: el provider envía una zona vacía y el emulador no la trata como «sin valor» ([fallo conocido](https://github.com/aws/aws-emulator/tree/main/issues/things-that-do-not-work)). Mientras no se corrija, declara `availability_zone` en cada instancia.
-- Rechaza `aws_db_instance` sin `engine_version`.
-- Guarda los recursos solo en memoria. Si se reinicia, los recursos desaparecen y TerraDock descarta el estado de Terraform anterior al siguiente plan.
-- Atiende una sola región (`us-east-1`) y una sola cuenta (`000000000000`). No evalúa políticas IAM.
-- Las AMI válidas son las suyas: lístalas con `aws ec2 describe-images --owners amazon`, apuntando al emulador.
+Detalles de red, variables y límites de cada emulador en [compatibilidad y límites](docs/limitations.md#emuladores-locales).
 
 ## Para desarrolladores
-
-### Compilar desde el código
 
 Necesitas Go 1.25 o superior, Node.js 24, npm y Make.
 
 ```sh
-git clone https://github.com/RenzoAL7/TerraDock.git
-cd TerraDock
+git clone https://github.com/RenzoAL7/TerraDock.git && cd TerraDock
 make install   # Dependencias Go y frontend
 make build     # Frontend en web/dist y programa en bin/terradock
 make run       # http://127.0.0.1:7331
+make dev-api   # y en otra terminal: make dev-web (recarga en caliente)
+make check     # Formato, análisis estático y tipos
+make test      # Pruebas Go y frontend
+make e2e       # Flujos de navegador (antes, una vez: make e2e-install)
 ```
 
-Este `bin/terradock` lee el frontend de `web/dist`. Para crear archivos autocontenidos como los publicados:
+Para publicar una versión, crea y sube una etiqueta `vX.Y.Z`: el workflow **Binarios** compila los 6 archivos y crea el release. La [portada](https://terradock.renzoaguilar.dev) y la demo se construyen con `make public-build` y se despliegan desde `main` ([despliegue público](docs/public-deployment.md)).
 
-```sh
-VERSION=0.2.0 make package   # dist/terradock_<sistema>_<arquitectura>.tar.gz|zip y checksums.txt
-```
-
-### Desarrollo con recarga
-
-En dos terminales:
-
-```sh
-make dev-api   # API Go
-make dev-web   # Vite en http://127.0.0.1:5173
-```
-
-### Pruebas
-
-```sh
-make check        # Formato, análisis estático y tipos
-make test         # Pruebas Go y frontend
-make e2e-install  # Instala Chromium de Playwright (una vez)
-make e2e          # Flujos de navegador
-make public-e2e   # Portada y demo pública
-```
-
-### Publicar una versión
-
-Las versiones se publican con una etiqueta:
-
-```sh
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-El workflow **Binarios** prueba el código y compila los 6 archivos. Después ejecuta el de linux/arm64 y crea el release en GitHub.
-
-### Sitio público
-
-La [portada](https://terradock.renzoaguilar.dev) y la demo son estáticas y se construyen con `make public-build`. Cada push a `main` que cambia la portada crea una imagen ARM64, la prueba y la promueve a K3s-Cortex. Un monitor revisa el sitio cada 3 horas. Los detalles están en [despliegue público](docs/public-deployment.md) y [demo en el navegador](docs/browser-demo.md).
-
-### Estructura
-
-```text
-TerraDock/
-├── cmd/terradock/   # Programa y opciones de arranque
-├── internal/        # Parser HCL, espacio de trabajo, Floci y servidor HTTP
-├── web/             # Interfaz React (src/), pruebas de navegador (tests/) y frontend embebido
-├── examples/        # Proyectos Terraform de ejemplo
-├── docs/            # Arquitectura, desarrollo, límites, rendimiento y roadmap
-├── scripts/         # Empaquetado, promoción y comprobaciones
-└── .github/         # CI, imágenes, binarios y monitor
-```
-
-Más información:
-
-- [Arquitectura](docs/architecture.md)
-- [Desarrollo y pruebas](docs/development.md)
-- [Compatibilidad y límites](docs/limitations.md)
-- [Rendimiento](docs/performance.md)
-- [Roadmap](docs/roadmap.md)
-- [Cómo contribuir](CONTRIBUTING.md)
+Más: [arquitectura](docs/architecture.md) · [desarrollo y pruebas](docs/development.md) · [límites](docs/limitations.md) · [rendimiento](docs/performance.md) · [roadmap](docs/roadmap.md) · [cómo contribuir](CONTRIBUTING.md)
 
 ## Licencia
 
