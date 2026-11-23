@@ -15,7 +15,7 @@ test("development entry resolves the public components and fonts", async ({
   });
   await page.goto(`http://127.0.0.1:${publicDevPort}/`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "El código es tuyo.",
+    "Tu Terraform.",
   );
   await page.evaluate(() => document.fonts.ready);
   await expect(
@@ -45,7 +45,7 @@ test("serves only public assets without APIs, remote dependencies or browser err
   await page.goto("/");
   await page.evaluate(() => document.fonts.ready);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "El código es tuyo.",
+    "Tu Terraform.",
   );
   await page.locator("#ejemplo").scrollIntoViewIfNeeded();
   await expect(page.locator("#ejemplo")).toBeInViewport();
@@ -90,7 +90,9 @@ test("explains availability and gives every link a real destination", async ({
     page.getByText("Disponible en la app local", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Despliegue local con Floci", { exact: true }),
+    page.getByText("Despliegue local con Floci o AWS Emulator", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(page.getByText("En el roadmap", { exact: true })).toBeVisible();
   await expect(
@@ -143,7 +145,7 @@ test("explains availability and gives every link a real destination", async ({
       expect(await response.text()).toContain("Demo interactiva");
     } else {
       expect(href).toMatch(
-        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#readme$|\/blob\/main\/docs\/(?:limitations|roadmap)\.md$|\/releases\/latest(?:\/download\/terradock_(?:darwin|linux|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip))?$)|^https:\/\/floci\.io$/,
+        /^https:\/\/github\.com\/RenzoAL7\/TerraDock(?:$|#readme$|\/blob\/main\/docs\/(?:limitations|roadmap)\.md$|\/releases\/latest(?:\/download\/terradock_(?:darwin|linux|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip))?$)|^https:\/\/floci\.io$|^https:\/\/github\.com\/aws\/aws-emulator$/,
       );
     }
   }

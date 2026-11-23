@@ -4,25 +4,49 @@ import {
   Check,
   Code2,
   Download as DownloadIcon,
-  FileCode2,
   FolderOpen,
   GitBranch,
-  Layers3,
   LockKeyhole,
   Network,
   PencilLine,
+  Workflow,
 } from "lucide-react";
 import { Download, repository } from "./Download";
 import { EditorExample } from "./EditorExample";
 import fontLicensesUrl from "./font-licenses.txt?url";
 
 const documentation = `${repository}#readme`;
+const awsEmulator = "https://github.com/aws/aws-emulator";
+
+/** Stacked layers: the Terraform violet plane over two Docker-blue strata. */
+function LogoMark({ size = 30 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M16 3 29 10 16 17 3 10Z" fill="#8F7BFF" />
+      <path
+        d="M3 16l13 7 13-7"
+        fill="none"
+        stroke="#3AA0FF"
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3 22l13 7 13-7"
+        fill="none"
+        stroke="#3AA0FF"
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+        opacity=".55"
+      />
+    </svg>
+  );
+}
 
 function Brand() {
   return (
     <a className="brand" href="#inicio" aria-label="TerraDock, inicio">
       <span className="brand-mark">
-        <Layers3 size={23} aria-hidden="true" />
+        <LogoMark />
       </span>
       <span>TerraDock</span>
     </a>
@@ -52,6 +76,42 @@ function Header() {
     </header>
   );
 }
+
+/** Static terminal: the real commands to unpack and open TerraDock. */
+function Terminal() {
+  return (
+    <figure
+      className="terminal"
+      aria-label="Terminal: descomprimir TerraDock y abrirlo en la carpeta de tu Terraform"
+    >
+      <div className="terminal-bar" aria-hidden="true">
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="terminal-dot" />
+        <span className="terminal-title">bash</span>
+      </div>
+      <pre>
+        <code>
+          <span className="terminal-comment">
+            # Descomprime el binario de tu plataforma
+          </span>
+          {"\n"}tar -xzf terradock_darwin_arm64.tar.gz{"\n\n"}
+          <span className="terminal-comment">
+            # Ábrelo desde la carpeta con tus archivos .tf
+          </span>
+          {"\n"}cd infra <span className="terminal-op">&amp;&amp;</span>{" "}
+          /ruta/a/terradock
+        </code>
+      </pre>
+      <figcaption className="terminal-status">
+        <span className="terminal-led" aria-hidden="true" />
+        TerraDock en 127.0.0.1:7331 · código ↔ diagrama sincronizados
+      </figcaption>
+    </figure>
+  );
+}
+
+const works = ["Terraform", "OpenTofu", "Floci", "AWS Emulator", "HCL nativo"];
 
 const steps = [
   {
@@ -106,6 +166,54 @@ function HowItWorks() {
   );
 }
 
+function LocalDeploy() {
+  return (
+    <section className="deploy-section" aria-labelledby="deploy-title">
+      <div className="page-width deploy-inner">
+        <div className="deploy-copy">
+          <p className="eyebrow">DESPLIEGUE LOCAL</p>
+          <h2 id="deploy-title">
+            Plan, apply y destroy. <span>Sin tocar AWS.</span>
+          </h2>
+          <p>
+            Elige el emulador: <a href="https://floci.io">Floci</a>, de código
+            abierto, o <a href={awsEmulator}>AWS Emulator</a>, el oficial de AWS
+            (experimental). TerraDock trabaja sobre una copia privada de tus
+            archivos y descarta tus credenciales reales.
+          </p>
+        </div>
+        <figure
+          className="deploy-card"
+          aria-label="Ejemplo del panel Emulador: plan con 15 recursos para crear y apply completado"
+        >
+          <div className="emulator-switch" aria-hidden="true">
+            <span>Floci</span>
+            <span className="active">
+              AWS Emulator <small>experimental</small>
+            </span>
+          </div>
+          <div className="plan-chips" aria-hidden="true">
+            <span className="chip-create">+15 crear</span>
+            <span className="chip-update">~0 actualizar</span>
+            <span className="chip-replace">±0 reemplazar</span>
+            <span className="chip-delete">−0 eliminar</span>
+          </div>
+          <pre aria-hidden="true">
+            <code>
+              $ terraform apply terradock.tfplan{"\n"}
+              aws_vpc.main: Creation complete{"\n"}
+              aws_lb.web: Creation complete{"\n"}
+              <span className="log-ok">
+                Apply complete! Resources: 15 added.
+              </span>
+            </code>
+          </pre>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
 const currentFeatures = [
   {
     title: "Código y arquitectura conectados",
@@ -120,7 +228,7 @@ const currentFeatures = [
     text: "Errores de sintaxis, guardado automático de HCL válido y protección ante conflictos.",
   },
   {
-    title: "Despliegue local con Floci",
+    title: "Despliegue local con Floci o AWS Emulator",
     text: "Plan, apply y destroy contra un AWS simulado en tu equipo, sin tocar tu cuenta real.",
   },
 ];
@@ -190,7 +298,7 @@ function Features() {
               <span className="availability-label future-label">
                 En el roadmap
               </span>
-              <Layers3 size={21} aria-hidden="true" />
+              <Workflow size={21} aria-hidden="true" />
             </div>
             <ul>
               {plannedFeatures.map(({ title, text }) => (
@@ -222,7 +330,7 @@ function Features() {
 
 export function LandingPage() {
   return (
-    <>
+    <div className="nebula">
       <a className="skip-link" href="#contenido">
         Saltar al contenido
       </a>
@@ -232,66 +340,84 @@ export function LandingPage() {
       <main id="contenido" tabIndex={-1}>
         <section className="hero page-width" aria-labelledby="hero-title">
           <div className="hero-copy">
-            <p className="eyebrow">TU INFRAESTRUCTURA, A LA VISTA.</p>
             <h1 id="hero-title">
-              El código es tuyo.
-              <br />
-              La claridad,
-              <br />
-              <span>también.</span>
+              <span>Tu Terraform.</span>
+              <br />A la vista.
             </h1>
             <p className="hero-description">
-              TerraDock conecta tu código Terraform con una vista de su
-              arquitectura. Comprende los recursos, sigue sus relaciones y edita
-              con contexto.
+              Código HCL y diagrama de arquitectura, sincronizados en vivo.
+              Despliega en un AWS emulado en tu equipo: sin credenciales, sin
+              factura, sin riesgo para tu cuenta.
             </p>
             <div className="hero-actions">
               <a className="button button-primary" href="./demo/">
-                Probar demo <ArrowRight size={17} aria-hidden="true" />
+                Probar demo <ArrowRight size={18} aria-hidden="true" />
               </a>
               <a className="button button-secondary" href="#descargar">
-                <DownloadIcon size={17} aria-hidden="true" /> Descargar
+                <DownloadIcon size={18} aria-hidden="true" /> Descargar
               </a>
             </div>
             <p className="hero-note">
-              <LockKeyhole size={13} aria-hidden="true" /> Prueba el editor con
+              <LockKeyhole size={14} aria-hidden="true" /> Prueba el editor con
               un ejemplo, sin cuenta ni credenciales cloud.
             </p>
-            <div className="hero-details">
-              <span>
-                <FileCode2 size={16} aria-hidden="true" /> Terraform / HCL
-              </span>
-              <span className="detail-divider" />
-              <span>Proyecto en desarrollo</span>
-            </div>
           </div>
-          <div className="hero-visual">
-            <div className="preview-label">
-              <span>CÓDIGO + ARQUITECTURA</span>
-              <span>Una misma configuración</span>
-            </div>
-            <EditorExample />
-            <p className="mobile-scroll-hint">
-              Desliza la muestra para explorar ambos paneles{" "}
-              <ArrowRight size={13} aria-hidden="true" />
+          <div className="hero-terminal">
+            <Terminal />
+            <p className="terminal-note">
+              Un solo ejecutable para macOS, Linux y Windows (ARM64 y AMD64).
             </p>
           </div>
         </section>
-        <div className="principles page-width">
-          <p>Tu configuración, con más contexto.</p>
-          <span>
-            <Code2 size={17} aria-hidden="true" /> HCL legible
-          </span>
-          <span>
-            <Network size={17} aria-hidden="true" /> Recursos conectados
-          </span>
-          <span>
-            <FolderOpen size={17} aria-hidden="true" /> Archivos en tu equipo
-          </span>
+
+        <div className="works-with">
+          <div className="page-width works-inner">
+            <p className="eyebrow">FUNCIONA CON</p>
+            <ul>
+              {works.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+          </div>
         </div>
+
+        <section
+          className="example-section page-width"
+          aria-labelledby="example-title"
+        >
+          <div className="section-heading section-heading-left">
+            <p className="eyebrow eyebrow-blue">CÓDIGO ↔ ARQUITECTURA</p>
+            <h2 id="example-title">Escribe en un lado. Míralo en el otro.</h2>
+          </div>
+          <EditorExample />
+          <p className="mobile-scroll-hint">
+            Desliza la muestra para explorar ambos paneles{" "}
+            <ArrowRight size={13} aria-hidden="true" />
+          </p>
+        </section>
+
         <HowItWorks />
+        <LocalDeploy />
         <Download />
         <Features />
+
+        <section className="closing page-width" aria-labelledby="closing-title">
+          <h2 id="closing-title">
+            Abre tu carpeta <span>.tf</span>.
+          </h2>
+          <p>
+            Prueba la demo en el navegador o descarga el binario. Código
+            abierto, licencia MIT.
+          </p>
+          <div className="hero-actions">
+            <a className="button button-primary" href="./demo/">
+              Abrir la demo <ArrowRight size={18} aria-hidden="true" />
+            </a>
+            <a className="button button-secondary" href={repository}>
+              Ver en GitHub <ArrowUpRight size={18} aria-hidden="true" />
+            </a>
+          </div>
+        </section>
       </main>
       <footer className="site-footer">
         <div className="page-width footer-inner">
@@ -308,6 +434,6 @@ export function LandingPage() {
           </nav>
         </div>
       </footer>
-    </>
+    </div>
   );
 }

@@ -1,0 +1,903 @@
+/* Nébula: dark landing theme. Loaded only by the public landing, after the
+   shared styles.css that the demo page also uses, so the demo is unchanged.
+   Violet nods to Terraform, blue to Docker. */
+@font-face {
+  font-family: "Bricolage Grotesque Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url("@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+:root {
+  color-scheme: dark;
+  background: #090a1a;
+  color: #eef0ff;
+  --nb-bg: #090a1a;
+  --nb-bg-2: #0c0e22;
+  --nb-surface: #0f1126;
+  --nb-surface-2: #151838;
+  --nb-line: #23264a;
+  --nb-line-soft: #1e2144;
+  --nb-text: #eef0ff;
+  --nb-muted: #a9afd3;
+  --nb-dim: #8188b3;
+  --nb-violet: #8f7bff;
+  --nb-violet-soft: #b7aaff;
+  --nb-violet-strong: #6e56f8;
+  --nb-violet-hover: #5d44ea;
+  --nb-blue: #3aa0ff;
+  --nb-blue-soft: #7fd1ff;
+  --nb-green: #3ddc97;
+  --nb-display: "Bricolage Grotesque Variable", "Manrope Variable", sans-serif;
+  /* Shared tokens used by styles.css rules that stay in effect. */
+  --ink: #eef0ff;
+  --muted: #a9afd3;
+  --line: #23264a;
+  --green: #3ddc97;
+  --green-dark: #b7aaff;
+}
+body {
+  background: var(--nb-bg);
+}
+
+.nebula {
+  color: var(--nb-text);
+  font-size: 16px;
+}
+.nebula a:focus-visible,
+.nebula button:focus-visible,
+.nebula [tabindex]:focus-visible {
+  outline: 3px solid var(--nb-violet-soft);
+}
+.nebula .page-width {
+  width: min(1200px, calc(100% - 64px));
+}
+.nebula .skip-link {
+  background: var(--nb-violet-strong);
+}
+
+/* Header ---------------------------------------------------------------- */
+.nebula .site-header {
+  background: var(--nb-bg);
+  border-bottom: 1px solid var(--nb-line-soft);
+}
+.nebula .header-inner {
+  min-height: 80px;
+  gap: 32px;
+}
+.nebula .brand {
+  font-family: var(--nb-display);
+  font-size: 24px;
+  letter-spacing: -0.5px;
+}
+.nebula .brand-mark {
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+}
+.nebula .header-inner nav {
+  margin-left: auto;
+  gap: 28px;
+}
+.nebula nav a {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--nb-muted);
+}
+.nebula nav a:hover,
+.nebula .text-link:hover {
+  color: var(--nb-text);
+  text-decoration-color: var(--nb-violet);
+}
+.nebula .source-link {
+  margin-left: 0;
+  background: transparent;
+  border: 1px solid #2c3060;
+  border-radius: 10px;
+  color: var(--nb-text);
+  font-size: 14px;
+  padding: 9px 14px;
+}
+.nebula .source-link:hover {
+  border-color: var(--nb-violet);
+  color: var(--nb-text);
+}
+.nebula .source-license {
+  font-size: 11px;
+  color: var(--nb-dim);
+}
+
+/* Hero ------------------------------------------------------------------ */
+.nebula .hero {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 56px;
+  padding-block: 112px 96px;
+}
+.nebula h1 {
+  margin: 0;
+  font-family: var(--nb-display);
+  font-size: clamp(56px, 7vw, 96px);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+}
+.nebula h1 span {
+  color: var(--nb-violet);
+}
+.nebula .hero-description {
+  max-width: 560px;
+  margin-top: 28px;
+  font-size: 20px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+.nebula .hero-actions {
+  margin-top: 32px;
+  gap: 14px;
+}
+.nebula .button {
+  min-height: 56px;
+  padding: 16px 28px;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 700;
+}
+.nebula .button-primary {
+  background: var(--nb-violet-strong);
+  color: #fff;
+  box-shadow: none;
+}
+.nebula .button-primary:hover {
+  background: var(--nb-violet-hover);
+}
+.nebula .button-secondary {
+  background: transparent;
+  border-color: #2c3060;
+  color: var(--nb-text);
+}
+.nebula .button-secondary:hover {
+  background: var(--nb-surface);
+  border-color: var(--nb-violet);
+}
+.nebula .hero-note {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--nb-dim);
+}
+.hero-terminal {
+  min-width: 0;
+}
+
+.terminal {
+  margin: 0;
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 45%);
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--nb-line-soft);
+}
+.terminal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5f57;
+}
+.terminal-dot:nth-child(2) {
+  background: #febc2e;
+}
+.terminal-dot:nth-child(3) {
+  background: #28c840;
+}
+.terminal-title {
+  flex: 1;
+  margin-right: 52px;
+  text-align: center;
+  font: 13px var(--mono);
+  color: var(--nb-dim);
+}
+.terminal pre {
+  margin: 0;
+  padding: 22px 24px;
+  overflow-x: auto;
+}
+.terminal code {
+  font: 15px/1.9 var(--mono);
+  color: var(--nb-text);
+  white-space: pre;
+}
+.terminal-comment {
+  color: #7880ac;
+}
+.terminal-op {
+  color: var(--nb-blue);
+}
+.terminal-status {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 16px 24px;
+  background: #0c1b22;
+  border-top: 1px solid #16323a;
+  font: 13.5px/1.6 var(--mono);
+  color: #a6e9cb;
+}
+.terminal-led {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--nb-green);
+  flex-shrink: 0;
+}
+.terminal-note {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--nb-dim);
+}
+
+/* Works with ------------------------------------------------------------ */
+.works-with {
+  background: var(--nb-bg-2);
+  border-block: 1px solid var(--nb-line-soft);
+}
+.works-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 40px;
+  padding-block: 26px;
+}
+.works-inner ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 40px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--nb-muted);
+}
+
+/* Section headings ------------------------------------------------------ */
+.nebula .eyebrow {
+  font: 500 13px var(--mono);
+  letter-spacing: 0.2em;
+  color: var(--nb-violet-soft);
+}
+.nebula .eyebrow-blue,
+.nebula .how-section .eyebrow,
+.nebula .deploy-section .eyebrow {
+  color: var(--nb-blue-soft);
+}
+.nebula h2 {
+  margin-top: 14px;
+  font-family: var(--nb-display);
+  font-size: clamp(36px, 4.4vw, 60px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+.nebula .section-heading {
+  max-width: 760px;
+  margin-inline: auto;
+}
+.nebula .section-heading-left {
+  margin-inline: 0;
+  text-align: left;
+}
+.nebula .section-heading > p:last-child {
+  margin-top: 18px;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+.nebula h3 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* Editor example -------------------------------------------------------- */
+.example-section {
+  padding-block: 112px 40px;
+}
+.example-section .editor-example {
+  margin-top: 40px;
+}
+.nebula .editor-example {
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 18px;
+  box-shadow: none;
+}
+.nebula .example-topbar {
+  background: var(--nb-bg-2);
+  border-bottom: 1px solid var(--nb-line-soft);
+  font-size: 14px;
+  min-height: 52px;
+}
+.nebula .project-dot {
+  background: var(--nb-violet);
+}
+.nebula .example-badge {
+  border-color: #2c3060;
+  color: var(--nb-muted);
+  font-size: 12px;
+}
+.nebula .example-split {
+  min-width: 640px;
+}
+.nebula .example-code {
+  background: var(--nb-surface);
+  color: #c9ceeb;
+  border-right: 1px solid var(--nb-line-soft);
+}
+.nebula .example-panel-heading {
+  height: 44px;
+  font-size: 13px;
+}
+.nebula .example-code .example-panel-heading {
+  background: var(--nb-surface);
+  color: var(--nb-muted);
+  border-bottom-color: var(--nb-line-soft);
+}
+.nebula .example-language {
+  font-size: 12px;
+}
+.nebula .example-code code {
+  font: 14px/1.85 var(--mono);
+}
+.nebula .code-line {
+  min-height: 26px;
+}
+.nebula .line-number {
+  color: #5c6390;
+}
+.nebula .syntax-comment {
+  color: #7880ac;
+}
+.nebula .syntax-string {
+  color: #a6e9cb;
+}
+.nebula .syntax-keyword {
+  color: var(--nb-violet);
+}
+.nebula .code-highlight {
+  background: #1b1a3d;
+  border-left-color: var(--nb-violet);
+}
+.nebula .example-code-footer,
+.nebula .example-graph-footer {
+  font-size: 12px;
+  color: var(--nb-dim);
+  border-top: 1px solid var(--nb-line-soft);
+}
+.nebula .example-architecture .example-panel-heading {
+  color: var(--nb-muted);
+  border-bottom-color: var(--nb-line-soft);
+}
+.nebula .architecture-canvas {
+  background-color: #0b0d20;
+  background-image: radial-gradient(#23264a 0.8px, transparent 0.8px);
+  background-size: 16px 16px;
+  padding: 22px 22px 14px;
+}
+.nebula .architecture-label {
+  font-size: 12px;
+  color: var(--nb-muted);
+}
+.nebula .vpc-boundary {
+  background: transparent;
+  border: 1.5px dashed #3a3f7a;
+  border-radius: 14px;
+  padding: 16px;
+}
+.nebula .resource-heading {
+  color: var(--nb-violet-soft);
+}
+.nebula .resource-heading strong {
+  font-size: 14px;
+}
+.nebula .resource-heading span,
+.nebula .subnet-cidr {
+  font-size: 12px;
+  color: var(--nb-dim);
+}
+.nebula .graph-connector,
+.nebula .graph-connector::after {
+  background: #3a3f7a;
+  border-color: #3a3f7a;
+}
+.nebula .graph-connector::after {
+  background: none;
+}
+.nebula .subnet-boundary {
+  background: transparent;
+  border: 1.5px dashed #2b5c8a;
+  border-radius: 12px;
+}
+.nebula .subnet-heading {
+  font-size: 12px;
+  color: var(--nb-blue-soft);
+}
+.nebula .instance-node {
+  background: var(--nb-surface-2);
+  border: 1.5px solid var(--nb-violet);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.nebula .instance-icon {
+  background: #2a2160;
+  color: var(--nb-violet-soft);
+}
+.nebula .instance-node strong {
+  font-size: 15px;
+}
+.nebula .instance-node span:not(.instance-icon) {
+  font-size: 13px;
+  color: var(--nb-muted);
+}
+.nebula .node-reference,
+.nebula .graph-caption {
+  font-size: 12px;
+  color: var(--nb-dim);
+}
+.nebula .example-graph-footer {
+  background: #0b0d20;
+}
+.nebula figcaption {
+  font-size: 14px;
+  color: var(--nb-dim);
+  border-top-color: var(--nb-line-soft);
+}
+
+/* How it works ---------------------------------------------------------- */
+.nebula .how-section {
+  padding-block: 72px 112px;
+}
+.nebula .steps {
+  gap: 20px;
+  margin-top: 44px;
+}
+.nebula .step {
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 16px;
+  padding: 28px;
+}
+.nebula .step-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #221c55;
+  color: var(--nb-violet-soft);
+}
+.nebula .step:nth-child(2) .step-icon {
+  background: #0f2a47;
+  color: var(--nb-blue-soft);
+}
+.nebula .step:nth-child(3) .step-icon {
+  background: #0e2e2a;
+  color: #7debc0;
+}
+.nebula .step-number {
+  font-size: 13px;
+  color: var(--nb-dim);
+}
+.nebula .step p {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+
+/* Local deploy ---------------------------------------------------------- */
+.deploy-section {
+  background: var(--nb-bg-2);
+  border-block: 1px solid var(--nb-line-soft);
+}
+.deploy-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+  padding-block: 112px;
+}
+.deploy-copy h2 span {
+  color: var(--nb-violet);
+}
+.deploy-copy > p:last-child {
+  margin-top: 20px;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+.deploy-copy a {
+  color: var(--nb-violet-soft);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.deploy-copy a:hover {
+  color: var(--nb-text);
+}
+.deploy-card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 16px;
+}
+.emulator-switch {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--nb-line);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nb-muted);
+}
+.emulator-switch span {
+  padding: 9px 16px;
+  border-radius: 7px;
+}
+.emulator-switch .active {
+  background: var(--nb-violet-strong);
+  color: #fff;
+}
+.emulator-switch small {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.plan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font: 500 13px var(--mono);
+}
+.plan-chips span {
+  padding: 6px 10px;
+  border-radius: 7px;
+}
+.chip-create {
+  background: #0e2e22;
+  color: #7debc0;
+}
+.chip-update {
+  background: #13274a;
+  color: #9ccbff;
+}
+.chip-replace {
+  background: #2a1f3d;
+  color: #cdb8ff;
+}
+.chip-delete {
+  background: #3a1a22;
+  color: #ffadb8;
+}
+.deploy-card pre {
+  margin: 0;
+  padding: 16px;
+  background: var(--nb-bg);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.deploy-card code {
+  font: 13px/1.8 var(--mono);
+  color: var(--nb-muted);
+  white-space: pre;
+}
+.log-ok {
+  color: #7debc0;
+}
+
+/* Download -------------------------------------------------------------- */
+.nebula .download-section {
+  padding-block: 112px 96px;
+}
+.nebula .platforms {
+  gap: 20px;
+  margin-top: 44px;
+}
+.nebula .platform,
+.nebula .after-download,
+.nebula .needs {
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 16px;
+}
+.nebula .platform {
+  padding: 24px;
+}
+.nebula .platform-current {
+  border-color: var(--nb-violet);
+  box-shadow: 0 0 0 1px var(--nb-violet);
+}
+.nebula .platform-heading {
+  color: var(--nb-blue-soft);
+}
+.nebula .platform-heading h3 {
+  color: var(--nb-text);
+  font-size: 20px;
+}
+.nebula .platform-badge {
+  background: #221c55;
+  color: var(--nb-violet-soft);
+  font-size: 12px;
+}
+.nebula .download-link {
+  border-color: var(--nb-line);
+  border-radius: 10px;
+  color: var(--nb-text);
+}
+.nebula .download-link:hover {
+  background: var(--nb-surface-2);
+  border-color: var(--nb-violet);
+}
+.nebula .download-link svg {
+  color: var(--nb-blue);
+}
+.nebula .download-link strong {
+  font-size: 15px;
+}
+.nebula .download-link small,
+.nebula .platform-hint {
+  font-size: 13px;
+  color: var(--nb-muted);
+}
+.nebula .after-download,
+.nebula .needs {
+  padding: 28px;
+}
+.nebula .after-download li,
+.nebula .first-run,
+.nebula .needs dd {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--nb-muted);
+}
+.nebula .after-download li::before {
+  font-size: 13px;
+  color: var(--nb-violet-soft);
+}
+.nebula .after-download li strong,
+.nebula .first-run strong,
+.nebula .needs dt {
+  color: var(--nb-text);
+}
+.nebula .needs dt {
+  font-size: 16px;
+}
+.nebula .first-run {
+  border-top-color: var(--nb-line-soft);
+}
+.nebula .download-section code {
+  font-size: 13px;
+  background: var(--nb-surface-2);
+  color: var(--nb-blue-soft);
+}
+
+/* Features -------------------------------------------------------------- */
+.nebula .features-section {
+  padding-block: 112px;
+  background: var(--nb-bg-2);
+  border-block: 1px solid var(--nb-line-soft);
+}
+.nebula .feature-columns {
+  margin-top: 48px;
+  gap: 32px;
+}
+.nebula .feature-group {
+  padding: 28px;
+  background: var(--nb-surface);
+  border: 1px solid var(--nb-line);
+  border-radius: 16px;
+}
+.nebula .feature-group-heading {
+  border-bottom-color: var(--nb-line-soft);
+  color: var(--nb-dim);
+}
+.nebula .availability-label {
+  font-size: 13px;
+  color: #7debc0;
+}
+.nebula .future-label {
+  color: var(--nb-violet-soft);
+}
+.nebula .feature-group li > svg {
+  color: var(--nb-green);
+}
+.nebula .feature-group h3 {
+  font-size: 17px;
+}
+.nebula .feature-group li p,
+.nebula .planned-note {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+.nebula .future-marker {
+  border-color: var(--nb-violet);
+}
+.nebula .text-link {
+  font-size: 15px;
+  color: var(--nb-violet-soft);
+}
+
+/* Closing --------------------------------------------------------------- */
+.closing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding-block: 112px;
+  text-align: center;
+}
+.closing h2 {
+  font-size: clamp(40px, 5vw, 64px);
+}
+.closing h2 span {
+  color: var(--nb-blue);
+}
+.closing > p {
+  font-size: 19px;
+  color: var(--nb-muted);
+}
+.closing .hero-actions {
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* Footer ---------------------------------------------------------------- */
+.nebula .site-footer {
+  background: var(--nb-bg);
+  border-top: 1px solid var(--nb-line-soft);
+}
+.nebula .footer-inner {
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.nebula .footer-inner nav {
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.nebula .footer-inner .brand {
+  font-size: 18px;
+}
+.nebula .footer-inner .brand-mark svg {
+  width: 22px;
+  height: 22px;
+}
+.nebula .footer-inner p,
+.nebula .footer-inner nav a {
+  font-size: 14px;
+  color: var(--nb-dim);
+}
+.nebula .footer-inner nav a:hover {
+  color: var(--nb-text);
+}
+
+/* Responsive ------------------------------------------------------------ */
+@media (max-width: 1100px) {
+  .nebula .hero {
+    gap: 40px;
+  }
+  .nebula .header-inner nav {
+    gap: 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .nebula .hero,
+  .deploy-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nebula .hero {
+    padding-block: 64px 56px;
+  }
+  .nebula h1 {
+    font-size: clamp(48px, 11vw, 72px);
+  }
+  .nebula .header-inner {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding-block: 16px 8px;
+  }
+  .nebula .header-inner nav {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 6px 22px;
+    padding-top: 6px;
+    border-top: 1px solid var(--nb-line-soft);
+  }
+  .nebula .header-inner nav a {
+    font-size: 14px;
+  }
+  .nebula .footer-inner nav {
+    width: 100%;
+    margin-left: 0;
+  }
+  .nebula .footer-inner p {
+    max-width: none;
+  }
+  .nebula .example-split {
+    min-width: 640px;
+  }
+  .deploy-inner,
+  .example-section,
+  .nebula .download-section,
+  .nebula .features-section,
+  .closing {
+    padding-block: 72px;
+  }
+  .nebula .how-section {
+    padding-block: 40px 72px;
+  }
+}
+
+@media (max-width: 600px) {
+  .nebula .page-width {
+    width: calc(100% - 32px);
+  }
+  .nebula .header-inner {
+    min-height: 0;
+  }
+  .nebula .header-inner nav {
+    justify-content: flex-start;
+    gap: 4px 16px;
+    border-top-color: var(--nb-line-soft);
+  }
+  .nebula .header-inner nav a {
+    font-size: 13px;
+  }
+  .nebula .source-link {
+    font-size: 12px;
+  }
+  .nebula h1 {
+    font-size: clamp(42px, 13vw, 56px);
+  }
+  .nebula .hero-description {
+    font-size: 17px;
+  }
+  .nebula .button {
+    font-size: 15px;
+    padding: 14px 20px;
+    min-height: 48px;
+  }
+  .terminal code {
+    font-size: 13px;
+  }
+  .works-inner ul {
+    gap: 10px 22px;
+    font-size: 14px;
+  }
+  .nebula h2 {
+    font-size: 34px;
+  }
+  .nebula .example-code code {
+    font-size: 12px;
+  }
+  .nebula .step,
+  .nebula .feature-group,
+  .nebula .after-download,
+  .nebula .needs,
+  .deploy-card {
+    padding: 20px;
+  }
+}
