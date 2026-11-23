@@ -10,17 +10,17 @@ La [guía de la demo pública](browser-demo.md) describe las acciones y la compi
 
 ## Alcance de la aplicación local
 
-| Área | Alcance |
-| --- | --- |
-| Archivos | Terraform HCL en archivos `.tf` del módulo raíz seleccionado |
-| Recursos | Recursos, fuentes de datos, módulos, variables, locals (un nodo por clave), outputs y proveedores (con alias), con sus referencias; presentación especializada para el ejemplo AWS y representación genérica cuando corresponde |
-| Expresiones | Se conserva la expresión original; no se ejecutan funciones de Terraform ni consultas de proveedores |
-| Editor | Edición de texto y guardado mediante el servicio local |
-| Inspector | Edición limitada a valores literales compatibles; expresiones calculadas en lectura |
-| Crear recursos | Paleta de 9 tipos AWS con sus atributos obligatorios; el bloque se añade al final de un `.tf` existente (como borrador) o en un archivo `.tf` nuevo |
-| Carpetas | Navegación y apertura dentro de la raíz permitida por `--root` |
-| Diagrama | Vista derivada de la configuración; relaciones estáticas, no estado de ejecución |
-| Ejemplo | Configuración didáctica para probar la interfaz; sin despliegue AWS verificado |
+| Área           | Alcance                                                                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Archivos       | Terraform HCL en archivos `.tf` del módulo raíz seleccionado                                                                                                                                                                    |
+| Recursos       | Recursos, fuentes de datos, módulos, variables, locals (un nodo por clave), outputs y proveedores (con alias), con sus referencias; presentación especializada para el ejemplo AWS y representación genérica cuando corresponde |
+| Expresiones    | Se conserva la expresión original; no se ejecutan funciones de Terraform ni consultas de proveedores                                                                                                                            |
+| Editor         | Edición de texto y guardado mediante el servicio local                                                                                                                                                                          |
+| Inspector      | Edición limitada a valores literales compatibles; expresiones calculadas en lectura                                                                                                                                             |
+| Crear recursos | Paleta de 9 tipos AWS con sus atributos obligatorios; el bloque se añade al final de un `.tf` existente (como borrador) o en un archivo `.tf` nuevo                                                                             |
+| Carpetas       | Navegación y apertura dentro de la raíz permitida por `--root`                                                                                                                                                                  |
+| Diagrama       | Vista derivada de la configuración; relaciones estáticas, no estado de ejecución                                                                                                                                                |
+| Ejemplo        | Configuración didáctica para probar la interfaz; sin despliegue AWS verificado                                                                                                                                                  |
 
 ## Límites de archivos y rutas
 
@@ -108,13 +108,38 @@ Las propiedades no compatibles se editan desde el código. Una propiedad que ref
 
 ## Fuera de esta entrega
 
-- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci o AWS Emulator (experimental), desde la pestaña Emulador y sobre una copia privada (ver el [README](../README.md#desplegar-en-local-con-floci-opcional)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
+- Ejecutar Terraform fuera del emulador. `init`, `plan`, `apply` y `destroy` solo existen contra Floci o AWS Emulator (experimental), desde la pestaña Emulador y sobre una copia privada (ver [emuladores locales](#emuladores-locales)). No hay ejecución contra cuentas AWS reales ni un `validate` independiente.
 - Importar un plan JSON arbitrario o comparar atributos con un estado Terraform. El plan generado contra el emulador sí se muestra sobre el diagrama.
 - Crear infraestructura mediante conexiones o movimientos del canvas.
 - Análisis completo de seguridad, costos, rutas o impacto de cambios.
 - Integración Git, colaboración multiusuario y sincronización en la nube.
 - Instaladores, firma de código y actualizaciones automáticas. Los binarios autocontenidos para ARM64 y AMD64 en macOS, Linux y Windows ya se construyen (`make package` y el workflow Binarios), pero no están firmados: macOS y Windows muestran un aviso la primera vez. Los archivos aparecen cuando se publica un release (etiqueta `v*`); si los enlaces todavía no descargan nada, aún no hay ninguno publicado y hay que compilar desde el código.
 - Certificación de funcionamiento en Windows y Linux de escritorio y pruebas con múltiples usuarios. La sincronización con 300 recursos sí está medida: el p95 queda por debajo de 1 s en una MacBook ARM con Chromium (ver [rendimiento](performance.md)), pero no en otras máquinas ni sistemas.
+
+## Emuladores locales
+
+| Emulador                                                           | Endpoint por defecto     | Cómo se inicia                                         |
+| ------------------------------------------------------------------ | ------------------------ | ------------------------------------------------------ |
+| [Floci](https://floci.io)                                          | `http://localhost:4566`  | `floci start` o «Iniciar Floci» en la pestaña Emulador |
+| [AWS Emulator](https://github.com/aws/aws-emulator) (experimental) | `https://127.0.0.1:9297` | «Iniciar AWS Emulator»; necesita Docker                |
+
+- `terradock --emulator aws` arranca con AWS Emulator seleccionado. El selector del panel cambia de emulador y cada uno guarda su plan y su estado por separado.
+- Otro puerto: `--floci-endpoint http://localhost:4567` o `--aws-emulator-endpoint https://127.0.0.1:9300`. Floci acepta loopback o `*.floci.io` (que debe resolver a tu equipo); AWS Emulator, solo `https` en loopback.
+- Las variables se leen de `terraform.tfvars` y `*.auto.tfvars`. Las que falten se escriben en el panel y solo viven en memoria.
+- Tras aplicar, los nodos desplegados se marcan `✓ desplegado`. Si los archivos cambian después del plan, hay que generar otro.
+- «Iniciar AWS Emulator» construye una vez la imagen local `terradock/aws-emulator:lts` (AWS no publica una) con su paquete LTS oficial, y arranca el contenedor `terradock-aws-emulator` en `127.0.0.1` con la telemetría desactivada. Para actualizarlo: `docker image rm terradock/aws-emulator:lts` y vuelve a iniciarlo.
+
+### Límites de AWS Emulator
+
+Verificado con la versión 1.0.578 (noviembre de 2026). Valida como AWS real, así que es más estricto que Floci; por ejemplo, rechaza tildes en la descripción de un security group.
+
+- Rechaza `aws_instance` sin `availability_zone`: el provider envía una zona vacía y el emulador no la trata como «sin valor» ([fallo conocido](https://github.com/aws/aws-emulator/tree/main/issues/things-that-do-not-work)). Declara `availability_zone` en cada instancia.
+- Rechaza `aws_db_instance` sin `engine_version`.
+- Guarda los recursos solo en memoria. Si se reinicia, desaparecen y TerraDock descarta el estado de Terraform anterior en el siguiente plan.
+- Atiende una sola región (`us-east-1`) y una sola cuenta (`000000000000`), y no evalúa políticas IAM.
+- Las AMI válidas son las suyas: lístalas con `aws ec2 describe-images --owners amazon` apuntando al emulador.
+
+Qué partes usan la red está en [ejecución local](#ejecución-local).
 
 ## Ejecución local
 

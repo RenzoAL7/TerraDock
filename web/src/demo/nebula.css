@@ -1,0 +1,401 @@
+/* Nébula theme for the public demo. It builds on the tokens and the shared
+   .nebula rules in landing/nebula.css; every selector is scoped under .nebula
+   so it wins over demo/styles.css whatever the import order. */
+.nebula.demo-page {
+  background: var(--nb-bg);
+  font-size: 14px;
+}
+
+/* Header ---------------------------------------------------------------- */
+.nebula .demo-header {
+  min-height: 72px;
+  padding: 14px 32px;
+  background: var(--nb-bg);
+  border-bottom: 1px solid var(--nb-line-soft);
+}
+.nebula .demo-header .brand {
+  gap: 10px;
+}
+.nebula .demo-badge {
+  border: 1px solid #2c3060;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--nb-violet-soft);
+  font-size: 13px;
+}
+.nebula .demo-badge .status-dot {
+  background: var(--nb-green);
+}
+.nebula .demo-back {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nb-muted);
+}
+.nebula .demo-back:hover {
+  color: var(--nb-text);
+}
+
+/* Intro ----------------------------------------------------------------- */
+.nebula .demo-main {
+  padding-top: 40px;
+}
+.nebula .demo-intro {
+  padding-bottom: 28px;
+}
+.nebula .demo-intro h1 {
+  margin: 10px 0 12px;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.nebula .demo-intro p:not(.eyebrow) {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--nb-muted);
+}
+.nebula .demo-intro .demo-boundary {
+  font-size: 14px;
+  color: var(--nb-dim);
+}
+
+/* Toolbar and controls -------------------------------------------------- */
+.nebula .demo-toolbar {
+  background: var(--nb-surface);
+  border-color: var(--nb-line);
+  border-radius: 16px 16px 0 0;
+  padding: 14px 18px;
+}
+.nebula .demo-example-picker {
+  font-size: 14px;
+  color: var(--nb-text);
+}
+.nebula.demo-page select,
+.nebula.demo-page input {
+  background: var(--nb-bg-2);
+  border-color: #2c3060;
+  border-radius: 8px;
+  color: var(--nb-text);
+}
+.nebula .demo-toolbar select {
+  font-size: 14px;
+}
+.nebula .demo-toolbar-hint {
+  font-size: 13px;
+  color: var(--nb-dim);
+}
+.nebula.demo-page code {
+  color: var(--nb-blue-soft);
+}
+.nebula .demo-toolbar button,
+.nebula .demo-error button {
+  background: transparent;
+  border-color: #2c3060;
+  border-radius: 8px;
+  color: var(--nb-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.nebula .demo-toolbar button:hover {
+  border-color: var(--nb-violet);
+  background: var(--nb-surface-2);
+}
+.nebula .demo-toolbar button:last-child {
+  background: var(--nb-violet-strong);
+  border-color: var(--nb-violet-strong);
+  color: #fff;
+}
+.nebula .demo-toolbar button:last-child:hover {
+  background: var(--nb-violet-hover);
+}
+.nebula .demo-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Workspace ------------------------------------------------------------- */
+.nebula .demo-workspace {
+  background: var(--nb-surface);
+  border-color: var(--nb-line);
+  border-radius: 0 0 16px 16px;
+}
+.nebula .demo-panel-title {
+  border-bottom-color: var(--nb-line-soft);
+  color: var(--nb-text);
+}
+.nebula .demo-panel-title h2 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+.nebula .demo-panel-title > span {
+  font-size: 12px;
+  color: var(--nb-dim);
+}
+.nebula .demo-panel-title svg {
+  color: var(--nb-violet-soft);
+}
+
+.nebula .demo-code-panel {
+  background: var(--nb-bg-2);
+  border-right: 1px solid var(--nb-line-soft);
+}
+.nebula .demo-code-panel .demo-panel-title {
+  background: var(--nb-bg-2);
+  border-color: var(--nb-line-soft);
+  color: var(--nb-text);
+}
+.nebula .demo-code-panel .demo-panel-title > span {
+  color: var(--nb-dim);
+}
+.nebula .demo-code-panel textarea {
+  color: #d5d9f2;
+  font-size: 13px;
+  line-height: 24px;
+  caret-color: var(--nb-violet-soft);
+}
+.nebula .demo-code-panel textarea::selection {
+  background: #3a2f8a;
+}
+.nebula .demo-code-panel textarea:focus-visible {
+  outline-color: var(--nb-violet-soft);
+}
+.nebula .demo-code-footer {
+  border-top-color: var(--nb-line-soft);
+  color: var(--nb-dim);
+  font-size: 12px;
+}
+
+.nebula .demo-graph-panel {
+  border-right-color: var(--nb-line-soft);
+}
+.nebula .demo-graph-status {
+  background: #0e1d2a;
+  color: #a6e9cb;
+  border-bottom-color: var(--nb-line-soft);
+  font-size: 12px;
+}
+.nebula .demo-graph-status.is-stale {
+  background: #2a2112;
+  color: #f3c979;
+}
+.nebula .demo-graph-canvas {
+  background-color: #0b0d20;
+  background-image: radial-gradient(#23264a 0.8px, transparent 0.8px);
+  background-size: 16px 16px;
+}
+.nebula .demo-scope {
+  background: #12153a99;
+  border: 1.5px dashed #3a3f7a;
+  border-radius: 12px;
+}
+.nebula .demo-subnet {
+  background: transparent;
+  border-color: #2b5c8a;
+}
+.nebula .demo-leaf {
+  background: var(--nb-surface-2);
+  border: 1px solid var(--nb-line);
+  border-radius: 10px;
+}
+.nebula .demo-node-button {
+  color: var(--nb-text);
+  border-radius: 9px;
+}
+.nebula .demo-node-button:hover {
+  background: #1b1f48;
+}
+.nebula .demo-node-button[aria-pressed="true"] {
+  background: #1d1a4a;
+  border-color: var(--nb-violet);
+  box-shadow: 0 0 0 3px #8f7bff26;
+}
+.nebula .demo-node-icon {
+  color: var(--nb-violet-soft);
+}
+.nebula .demo-subnet > .demo-node-button .demo-node-icon {
+  color: var(--nb-blue-soft);
+}
+.nebula .demo-leaf .demo-node-icon {
+  background: #2a2160;
+  color: var(--nb-violet-soft);
+  border-radius: 8px;
+}
+.nebula .demo-node-text strong {
+  font-size: 14px;
+}
+.nebula .demo-node-text code {
+  font-size: 11px;
+  color: var(--nb-dim);
+}
+.nebula .demo-node-text > span {
+  font-size: 12px;
+  color: var(--nb-muted);
+}
+.nebula .demo-node-children {
+  border-left-color: #3a3f7a;
+}
+.nebula .demo-create {
+  background: var(--nb-surface);
+  border-bottom-color: var(--nb-line-soft);
+  color: var(--nb-text);
+  font-size: 13px;
+}
+.nebula .demo-create select,
+.nebula .demo-create input {
+  font-size: 13px;
+}
+.nebula .demo-create button {
+  background: var(--nb-violet-strong);
+  border-color: var(--nb-violet-strong);
+  border-radius: 8px;
+}
+.nebula .demo-create-problem {
+  color: #f3c979;
+  font-size: 12px;
+}
+.nebula .demo-relationships {
+  border-top-color: var(--nb-line-soft);
+  color: var(--nb-muted);
+  font-size: 12px;
+}
+
+/* Inspector ------------------------------------------------------------- */
+.nebula .demo-inspector {
+  background: var(--nb-surface);
+}
+.nebula .demo-resource-kind {
+  font: 500 11px var(--mono);
+  letter-spacing: 0.18em;
+  color: var(--nb-dim);
+}
+.nebula .demo-inspector h3 {
+  font-family: var(--nb-display);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.nebula .demo-resource-id {
+  color: var(--nb-muted);
+  font-size: 13px;
+}
+.nebula .demo-source-link {
+  color: var(--nb-violet-soft);
+  font-size: 12px;
+}
+.nebula .demo-field-help {
+  font-size: 13px;
+  color: var(--nb-dim);
+}
+.nebula .demo-property label,
+.nebula .demo-readonly-property > span {
+  font-size: 13px;
+  color: var(--nb-text);
+}
+.nebula .demo-property-input input,
+.nebula .demo-property-input select {
+  font-size: 13px;
+}
+.nebula .demo-property-input button {
+  border-radius: 8px;
+  background: var(--nb-violet-strong);
+  border-color: var(--nb-violet-strong);
+}
+.nebula .demo-property-input button:disabled {
+  background: var(--nb-surface-2);
+  border-color: var(--nb-line);
+  color: var(--nb-dim);
+}
+.nebula .demo-readonly-property code {
+  background: var(--nb-bg-2);
+  border: 1px solid var(--nb-line-soft);
+  border-radius: 8px;
+  color: var(--nb-muted);
+  font-size: 12px;
+}
+.nebula .demo-readonly-property small {
+  font-size: 12px;
+  color: var(--nb-dim);
+}
+.nebula .demo-empty {
+  font-size: 14px;
+  color: var(--nb-muted);
+}
+
+/* Messages and footer --------------------------------------------------- */
+.nebula .demo-notice {
+  color: #a6e9cb;
+  font-size: 13px;
+}
+.nebula .demo-error {
+  background: #3a1a22;
+  border-color: #6b2a38;
+  border-radius: 12px;
+  color: #ffc4cc;
+  font-size: 14px;
+}
+.nebula .demo-diagnostics {
+  background: #2a2112;
+  border-color: #5a4520;
+  border-radius: 12px;
+  color: var(--nb-text);
+  font-size: 14px;
+}
+.nebula .demo-diagnostics h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+.nebula .demo-diagnostics strong {
+  font-size: 13px;
+  color: #f3c979;
+}
+.nebula .demo-footer {
+  padding-top: 14px;
+  font-size: 13px;
+  color: var(--nb-dim);
+}
+.nebula .demo-footer a {
+  color: var(--nb-violet-soft);
+}
+.nebula .demo-footer a:hover {
+  color: var(--nb-text);
+}
+.nebula.demo-page input:focus-visible,
+.nebula.demo-page select:focus-visible,
+.nebula.demo-page summary:focus-visible {
+  outline-color: var(--nb-violet-soft);
+}
+
+@media (max-width: 1150px) {
+  .nebula .demo-code-panel {
+    border-right: 1px solid var(--nb-line-soft);
+  }
+  .nebula .demo-inspector {
+    border-top-color: var(--nb-line-soft);
+  }
+}
+
+@media (max-width: 650px) {
+  .nebula .demo-header {
+    padding: 14px 16px;
+  }
+  .nebula .demo-intro h1 {
+    font-size: clamp(32px, 10vw, 40px);
+  }
+  .nebula .demo-intro p:not(.eyebrow) {
+    font-size: 15px;
+  }
+  .nebula .demo-toolbar {
+    padding: 12px;
+  }
+  .nebula .demo-code-panel {
+    border-right: 0;
+  }
+  .nebula .demo-property-input input,
+  .nebula .demo-property-input select {
+    font-size: 16px;
+  }
+}

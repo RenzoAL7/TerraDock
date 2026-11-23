@@ -12,12 +12,22 @@ const scope = globalThis as typeof globalThis & {
 
 const ready = (async () => {
   const go = new scope.Go();
-  const response = await fetch(wasmUrl, { credentials: "omit" });
-  if (!response.ok)
-    throw new Error("No se pudo cargar el analizador del ejemplo.");
-  const { instance } = await WebAssembly.instantiate(
-    await response.arrayBuffer(),
+  const load = async () => {
+    const response = await fetch(wasmUrl, { credentials: "omit" });
+    if (!response.ok)
+      throw new Error("No se pudo cargar el analizador del ejemplo.");
+    return response;
+  };
+  // Compile while downloading, without holding the whole binary in a buffer.
+  // A server that does not send application/wasm falls back to a buffer.
+  const { instance } = await WebAssembly.instantiateStreaming(
+    load(),
     go.importObject,
+  ).catch(async () =>
+    WebAssembly.instantiate(
+      await (await load()).arrayBuffer(),
+      go.importObject,
+    ),
   );
   void go.run(instance).catch(() => {
     self.postMessage({

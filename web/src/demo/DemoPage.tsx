@@ -6,7 +6,6 @@ import {
   Code2,
   Download,
   FileCode2,
-  Layers3,
   Network,
   Plus,
   RotateCcw,
@@ -17,6 +16,7 @@ import { hidesValue, SENSITIVE_TEXT } from "../lib/sensitive";
 import { createDemoEngine } from "./engine";
 import { examples } from "./examples";
 import { DemoGraph } from "./DemoGraph";
+import { LogoMark } from "../landing/LogoMark";
 import {
   buildResource,
   candidates,
@@ -451,7 +451,7 @@ export function DemoPage() {
       : [];
   const stale = !fresh && Boolean(lastValid);
   return (
-    <div className="demo-page">
+    <div className="demo-page nebula">
       <a className="skip-link" href="#demo-workspace">
         Saltar al editor
       </a>
@@ -462,7 +462,7 @@ export function DemoPage() {
           aria-label="TerraDock, volver a la portada"
         >
           <span className="brand-mark">
-            <Layers3 size={23} aria-hidden="true" />
+            <LogoMark size={28} />
           </span>
           <span>TerraDock</span>
         </a>
