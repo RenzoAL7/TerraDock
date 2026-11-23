@@ -16,6 +16,7 @@ RUN npm ci
 COPY web ./
 RUN npm run build:public
 ARG VCS_REF=local
+RUN find dist-public -type f \( -name '*.js' -o -name '*.css' -o -name '*.wasm' -o -name '*.html' -o -name '*.svg' -o -name '*.txt' \) -size +1k -exec gzip -9 -k -n {} +
 RUN VCS_REF="$VCS_REF" node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("dist-public/release.json", JSON.stringify({application:"terradock-public",revision:process.env.VCS_REF}) + "\n")'
 
 FROM nginxinc/nginx-unprivileged:stable-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
