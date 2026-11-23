@@ -97,7 +97,7 @@ const needs = [
   },
   {
     what: "Desplegar en un AWS simulado (opcional)",
-    need: "Además: Docker, la CLI de Floci y Terraform u OpenTofu.",
+    need: "Además: Docker y Terraform u OpenTofu, más la CLI de Floci (o Docker solo, para el AWS Emulator experimental).",
     link: { href: "https://floci.io", label: "Instalar Floci" },
   },
 ];
