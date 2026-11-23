@@ -766,6 +766,14 @@ body {
   background: var(--nb-bg);
   border-top: 1px solid var(--nb-line-soft);
 }
+.nebula .footer-inner {
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.nebula .footer-inner nav {
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
 .nebula .footer-inner .brand {
   font-size: 18px;
 }
@@ -820,6 +828,13 @@ body {
   }
   .nebula .header-inner nav a {
     font-size: 14px;
+  }
+  .nebula .footer-inner nav {
+    width: 100%;
+    margin-left: 0;
+  }
+  .nebula .footer-inner p {
+    max-width: none;
   }
   .nebula .example-split {
     min-width: 640px;
